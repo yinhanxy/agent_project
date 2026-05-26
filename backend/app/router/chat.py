@@ -138,7 +138,7 @@ async def add_vector_single(
         file: UploadFile = File(...),
         user_id: str = Depends(get_current_user_id),
         router_service: ChatService = Depends(get_router_service),
-        _: None = Depends(rate_limit(limit=5, window=60))
+        _: None = Depends(rate_limit(limit=30, window=60))
 ):
     """上传文件，将文件保存到向量数据库，仅支持TXT和PDF"""
     filename = await router_service.handle_add_vector_single(file, user_id)
@@ -151,7 +151,7 @@ async def add_vector_multiple(
         files: List[UploadFile] = File(..., description="要上传的文件列表，仅支持PDF和TXT格式"),
         user_id: str = Depends(get_current_user_id),
         router_service: ChatService = Depends(get_router_service),
-        _: None = Depends(rate_limit(limit=3, window=60))
+        _: None = Depends(rate_limit(limit=30, window=60))
 ):
     """上传多个文件，将文件保存到向量数据库，仅支持TXT和PDF"""
     filenames = await router_service.handle_add_vector_multiple(files, user_id)
@@ -337,7 +337,7 @@ async def upload_to_kb(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user_id),
     router_service: ChatService = Depends(get_router_service),
-    _: None = Depends(rate_limit(limit=5, window=60)),
+    _: None = Depends(rate_limit(limit=30, window=60)),
 ):
     """上传文档到指定知识库（需 editor 以上权限）"""
     filename = await router_service.handle_add_vector_single(file, user_id, kb_id=kb_id)

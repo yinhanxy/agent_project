@@ -16,8 +16,9 @@ def rate_limit(limit: int = 1, window: int = 60):
         if not client_ip:
             client_ip = request.headers.get('X-Forwarded-For', '').split(',')[0].strip() or 'unknown'
 
-        # 生成限流键
-        key = f"rate_limit:aichat:{client_ip}"
+        # 生成限流键（按路由路径隔离，防止不同接口共享计数器）
+        path = request.url.path
+        key = f"rate_limit:{path}:{client_ip}"
 
         # 获取Redis连接
         redis = await connect_redis()

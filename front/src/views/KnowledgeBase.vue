@@ -396,7 +396,7 @@ const confirmDeleteDoc = (doc) => {
         await loadDocuments()
       }
     } catch (e) {
-      showToast('删除失败：' + (e.response?.data?.detail || '未知错误'))
+      showToast('删除失败：' + (e.response?.data?.message || e.response?.data?.detail || '未知错误'))
     }
   }).catch(() => {})
 }
@@ -428,7 +428,7 @@ const uploadAll = async () => {
       await axios.post('/api/vector/add/single', formData, { headers: authHeader() })
       results.push({ name: file.name, success: true, message: '上传成功，已存入知识库' })
     } catch (e) {
-      results.push({ name: file.name, success: false, message: e.response?.data?.detail || '上传失败' })
+      results.push({ name: file.name, success: false, message: e.response?.data?.message || e.response?.data?.detail || '上传失败' })
     }
   }
   uploadResults.value = [...results, ...uploadResults.value]
@@ -451,7 +451,7 @@ const confirmClean = () => {
       uploadResults.value = []
       await loadDocuments()
     } catch (e) {
-      showToast('清空失败：' + (e.response?.data?.detail || '未知错误'))
+      showToast('清空失败：' + (e.response?.data?.message || e.response?.data?.detail || '未知错误'))
     }
   }).catch(() => {})
 }
@@ -490,7 +490,7 @@ const beforeCloseCreateKb = async (action) => {
     await loadKbs()
     return true
   } catch (e) {
-    showToast('创建失败：' + (e.response?.data?.detail || '未知错误'))
+    showToast('创建失败：' + (e.response?.data?.message || e.response?.data?.detail || '未知错误'))
     return false
   } finally {
     creatingKb.value = false
@@ -525,7 +525,7 @@ const beforeCloseRenameKb = async (action) => {
     await loadKbs()
     return true
   } catch (e) {
-    showToast('重命名失败：' + (e.response?.data?.detail || '未知错误'))
+    showToast('重命名失败：' + (e.response?.data?.message || e.response?.data?.detail || '未知错误'))
     return false
   } finally {
     renamingKb.value = false
@@ -543,7 +543,7 @@ const confirmDeleteKb = (kb) => {
       showToast('知识库已删除')
       await loadKbs()
     } catch (e) {
-      showToast('删除失败：' + (e.response?.data?.detail || '未知错误'))
+      showToast('删除失败：' + (e.response?.data?.message || e.response?.data?.detail || '未知错误'))
     }
   }).catch(() => {})
 }
@@ -580,7 +580,7 @@ const handleKbFileSelect = async (e) => {
       await axios.post(`/api/kb/${currentKb.value.kb_id}/documents`, formData, { headers: authHeader() })
       showToast(`${file.name} 上传成功`)
     } catch (err) {
-      showToast(`${file.name} 上传失败：` + (err.response?.data?.detail || '未知错误'))
+      showToast(`${file.name} 上传失败：` + (err.response?.data?.message || err.response?.data?.detail || '未知错误'))
     }
   }
   await loadKbDocuments(currentKb.value.kb_id)
@@ -598,7 +598,7 @@ const queryKb = async () => {
     )
     kbResult.value = res.data?.data || {}
   } catch (e) {
-    showToast('查询失败：' + (e.response?.data?.detail || '未知错误'))
+    showToast('查询失败：' + (e.response?.data?.message || e.response?.data?.detail || '未知错误'))
   } finally {
     queryingKb.value = false
   }
