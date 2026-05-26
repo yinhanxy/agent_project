@@ -9,169 +9,271 @@ from fastapi import HTTPException, UploadFile
 
 from app.core.logger_handler import logger
 from app.rag.vector_store import VectorStoreService
-from app.rag.rag_service import RagService
+from app.rag.rag_service import rag_service
 from app.rag.reorder_service import reorder_service
 from app.agent.agent import get_agent_response
 from app.services import session_manager as sm
+from app.services.document_service import document_service
+from app.services.kb_service import kb_service
+
+
+ALLOWED_EXTENSIONS = {".pdf", ".txt", ".md", ".pptx", ".docx"}
+ALLOWED_MIME_TYPES = {
+    "application/pdf",
+    "text/plain",
+    "text/markdown",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+}
+MAX_SINGLE_SIZE = 20 * 1024 * 1024   # 20 MB
+MAX_BATCH_SIZE = 200 * 1024 * 1024   # 200 MB
+
+
+def _check_file_type(content: bytes, filename: str) -> None:
+    """MIME + 扩展名双重校验，不通过则抛 400"""
+    mime = magic.Magic(mime=True)
+    file_type = mime.from_buffer(content)
+    ext = os.path.splitext(filename)[1].lower()
+    if file_type not in ALLOWED_MIME_TYPES and ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的文件类型：{filename}（检测到 {file_type}，扩展名 {ext}）",
+        )
+
 
 class ChatService:
     """路由服务层，处理业务逻辑"""
 
-    async def handle_agent_query(self, query: str, session_id: Optional[str], user_id: str) -> Tuple[str, dict, str]:
-        """处理智能代理查询逻辑"""
-        # 如果未提供 session_id，则生成一个
+    # ── 对话 ──────────────────────────────────────────────────────────────────
+
+    async def handle_agent_query(
+        self, query: str, session_id: Optional[str], user_id: str
+    ) -> Tuple[str, dict, str]:
         session_id = session_id or str(uuid.uuid4())
-
-        # 获取会话历史
         history = await sm.session_manager.get_history(session_id, user_id)
-
-        # 获取智能代理响应
         result = await get_agent_response(query, history)
         response = result.get("response")
         steps = result.get("steps", [])
-
-        # 添加到会话历史
         await sm.session_manager.add_message(session_id, user_id, query, response)
-
         return session_id, response, steps
 
     async def handle_rag_query(self, query: str) -> str:
-        """处理 RAG 查询逻辑"""
-        rag_service = RagService()
-        response = await rag_service.rag_summary(query)
-        return response
+        return await rag_service.rag_summary(query)
 
-    async def handle_get_session(self, session_id: str, user_id: str) -> List[Tuple[str, str]]:
-        """处理获取会话逻辑"""
-        # 获取会话历史，会自动验证会话属于该用户
-        history = await sm.session_manager.get_history(session_id, user_id)
-        return history
+    async def handle_rag_query_with_citations(self, query: str) -> Dict[str, Any]:
+        return await rag_service.get_documents_and_summary(query)
+
+    # ── 会话管理 ──────────────────────────────────────────────────────────────
+
+    async def handle_get_session(self, session_id: str, user_id: str):
+        return await sm.session_manager.get_history(session_id, user_id)
 
     async def handle_delete_session(self, session_id: str, user_id: str) -> None:
-        """处理删除会话逻辑"""
         await sm.session_manager.clear_session(session_id, user_id)
 
     async def handle_get_all_sessions(self) -> List[str]:
-        """处理获取所有会话逻辑"""
-        session_ids = await sm.session_manager.get_all_session_ids()
-        return session_ids
+        return await sm.session_manager.get_all_session_ids()
 
     async def handle_get_user_sessions(self, user_id: str, current_user_id: str) -> List[Dict]:
-        """处理获取用户会话逻辑"""
-        # 确保用户只能获取自己的会话
         if user_id != current_user_id:
             raise HTTPException(status_code=403, detail="Forbidden")
+        return await sm.session_manager.get_user_sessions(user_id)
 
-        sessions = await sm.session_manager.get_user_sessions(user_id)
-        return sessions
+    # ── 知识库：上传 ──────────────────────────────────────────────────────────
 
-    async def handle_add_vector_single(self, file: UploadFile, user_id: str) -> str:
-        """处理添加单个向量逻辑"""
-        # 创建向量数据库服务实例
-        store = VectorStoreService()
+    async def handle_add_vector_single(
+        self, file: UploadFile, user_id: str, kb_id: str = None
+    ) -> str:
+        if file.size and file.size > MAX_SINGLE_SIZE:
+            raise HTTPException(status_code=400, detail="文件大小不能超过 20MB")
 
-        # 检查文件大小，如果超过20MB则抛出异常
-        max_file_size = 20 * 1024 * 1024  # 20MB
-        if file.size > max_file_size:
-            raise HTTPException(status_code=400, detail="文件大小不能超过20MB")
-
-        # 使用python-magic检查文件类型
         content = await file.read()
-        # 重置文件指针
         await file.seek(0)
-        
-        # 检测文件类型
-        mime = magic.Magic(mime=True)
-        file_type = mime.from_buffer(content)
-        
-        # 同时检查文件扩展名
-        file_extension = os.path.splitext(file.filename)[1].lower()
-        allowed_extensions = {'.pdf', '.txt', '.md', '.pptx', '.docx'}
-        
-        # 检查文件类型是否允许（MIME类型或扩展名任一符合即可）
-        allowed_mime_types = {'application/pdf', 'text/plain', 'text/markdown', 'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}
-        if file_type not in allowed_mime_types and file_extension not in allowed_extensions:
-            raise HTTPException(status_code=400, detail=f"文件类型不支持，目前支持PDF、TXT、Markdown、PPTX、DOCX文件类型。检测到的文件类型: {file_type}，扩展名: {file_extension}")
+        _check_file_type(content, file.filename)
 
-        # 处理文件并存储到向量数据库
-        await store.get_document(files=[file], user_id=user_id)
+        if kb_id:
+            has_perm = await kb_service.check_permission(user_id, kb_id, required_role="editor")
+            if not has_perm:
+                raise HTTPException(status_code=403, detail=f"无权向知识库 {kb_id} 上传文件")
 
+        store = VectorStoreService()
+        result = await store.get_document(files=[file], user_id=user_id, replace=True, kb_id=kb_id)
+        if not result["processed"]:
+            if result["duplicates"]:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"文件 {file.filename} 已存在于知识库中，无需重复上传",
+                )
+            raise HTTPException(
+                status_code=422,
+                detail=f"文件 {file.filename} 处理失败，可能是内容为空或格式不支持",
+            )
+        rag_service.invalidate_retriever()
         return file.filename
 
-    async def handle_add_vector_multiple(self, files: List[UploadFile], user_id: str) -> List[str]:
-        """处理添加多个向量逻辑"""
-        store = VectorStoreService()
-        max_file_folder_size = 200 * 1024 * 1024  # 最大文件大小200MB
-
-        # 检查文件类型和大小
+    async def handle_add_vector_multiple(
+        self, files: List[UploadFile], user_id: str, kb_id: str = None
+    ) -> List[str]:
         total_size = 0
-        allowed_mime_types = {'application/pdf', 'text/plain', 'text/markdown', 'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}
-        mime = magic.Magic(mime=True)
-        
         for file in files:
             content = await file.read()
             total_size += len(content)
-            
-            # 检测文件类型
-            file_type = mime.from_buffer(content)
-            # 同时检查文件扩展名
-            file_extension = os.path.splitext(file.filename)[1].lower()
-            allowed_extensions = {'.pdf', '.txt', '.md', '.pptx', '.docx'}
-            if file_type not in allowed_mime_types and file_extension not in allowed_extensions:
-                raise HTTPException(status_code=400, detail=f"文件 {file.filename} 类型不支持，目前支持PDF、TXT、Markdown、PPTX、DOCX文件类型。检测到的文件类型: {file_type}，扩展名: {file_extension}")
-            
-            # 重置文件指针以便后续处理
+            _check_file_type(content, file.filename)
             await file.seek(0)
 
-        if total_size > max_file_folder_size:
-            raise HTTPException(status_code=400, detail="文件总大小不能超过200MB")
+        if total_size > MAX_BATCH_SIZE:
+            raise HTTPException(status_code=400, detail="文件总大小不能超过 200MB")
 
-        start_time = time.time()
-        # 定义处理单个文件的函数
-        async def process_file(file):
-            # 为每个文件创建一个新的VectorStoreService实例
-            file_store = VectorStoreService()
-            await file_store.get_document(files=[file], user_id=user_id)
-            return file.filename
-        
-        # 使用asyncio.gather并行处理所有文件
-        results = await asyncio.gather(*[process_file(file) for file in files])
+        if kb_id:
+            has_perm = await kb_service.check_permission(user_id, kb_id, required_role="editor")
+            if not has_perm:
+                raise HTTPException(status_code=403, detail=f"无权向知识库 {kb_id} 上传文件")
 
-        end_time = time.time()
-        logger.info(f"【添加向量】耗时: {end_time - start_time:.2f}秒，处理文件数: {len(results)}")
+        start = time.time()
 
-        return results
+        async def process(f: UploadFile) -> str:
+            s = VectorStoreService()
+            result = await s.get_document(files=[f], user_id=user_id, replace=True, kb_id=kb_id)
+            if not result["processed"]:
+                if result["duplicates"]:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"文件 {f.filename} 已存在于知识库中，无需重复上传",
+                    )
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"文件 {f.filename} 处理失败，可能是内容为空或格式不支持",
+                )
+            return f.filename
+
+        results = await asyncio.gather(*[process(f) for f in files])
+        rag_service.invalidate_retriever()
+        logger.info(f"[VectorUpload] 批量上传 {len(results)} 个文件，耗时 {time.time()-start:.2f}s")
+        return list(results)
+
+    # ── 知识库：查询 ──────────────────────────────────────────────────────────
+
+    async def handle_list_documents(self, user_id: str) -> List[Dict[str, Any]]:
+        """返回用户知识库文档列表"""
+        return await document_service.list_by_user(user_id)
+
+    # ── 知识库：删除 ──────────────────────────────────────────────────────────
+
+    async def handle_delete_document(self, doc_id: str, user_id: str) -> None:
+        """删除单个文档"""
+        store = VectorStoreService()
+        deleted = await store.delete_document_by_id(doc_id, user_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="文档不存在或无权限删除")
+        rag_service.invalidate_retriever()
 
     async def clean_user_upload(self, user_id: str) -> None:
-        """处理删除用户上传的所有向量逻辑"""
-        # 创建向量数据库服务实例
+        """清空用户全部文档（向量库 + DB 记录一并清除，修复旧版 MD5 遗留 Bug）"""
         store = VectorStoreService()
-        # 删除用户的所有文档
         await store.delete_user_documents(user_id)
+        rag_service.invalidate_retriever()
 
-    async def handle_reorder(self, query: str, documents: List[str]) -> List[Dict[str, Any]]:
-        """
-        使用本地Ollama重排序模型对文档进行中文重排序
-        :param query: 查询语句
-        :param documents: 文档列表
-        :return: 排序后的文档列表，包含文档内容和相似度
-        """
+    # ── 知识库管理 ────────────────────────────────────────────────────────────
+
+    async def handle_create_kb(
+        self, user_id: str, name: str, scope: str, dept_id: str, description: str,
+        is_admin: bool = False,
+    ) -> Dict[str, Any]:
+        if not is_admin and scope in ("dept", "admin"):
+            raise HTTPException(status_code=403, detail="只有管理员才能创建部门或管理员专属知识库")
+        return await kb_service.create_kb(
+            owner_id=user_id, name=name, scope=scope,
+            dept_id=dept_id or None, description=description,
+        )
+
+    async def handle_list_kbs(self, user_id: str, is_admin: bool = False) -> List[Dict[str, Any]]:
+        return await kb_service.list_accessible_kbs(user_id, is_admin=is_admin)
+
+    async def handle_get_kb(self, kb_id: str, user_id: str) -> Dict[str, Any]:
+        has_perm = await kb_service.check_permission(user_id, kb_id, required_role="viewer")
+        if not has_perm:
+            raise HTTPException(status_code=403, detail="无权访问该知识库")
+        kb = await kb_service.get_kb(kb_id)
+        if not kb:
+            raise HTTPException(status_code=404, detail="知识库不存在")
+        return kb_service._kb_to_dict(kb)
+
+    async def handle_update_kb(
+        self, kb_id: str, user_id: str, name: str, description: Optional[str]
+    ) -> Dict[str, Any]:
         try:
-            # 使用本地重排序服务
+            return await kb_service.update_kb(kb_id, user_id, name, description)
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+    async def handle_delete_kb(self, kb_id: str, user_id: str) -> None:
+        try:
+            doc_ids = await kb_service.delete_kb(kb_id, user_id)
+            store = VectorStoreService()
+            for doc_id in doc_ids:
+                await store.delete_document_by_id(doc_id, user_id)
+            rag_service.invalidate_retriever()
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+
+    async def handle_add_kb_member(
+        self, kb_id: str, actor_id: str, principal_id: str, principal_type: str, role: str
+    ) -> None:
+        try:
+            await kb_service.add_member(kb_id, actor_id, principal_id, principal_type, role)
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+
+    async def handle_remove_kb_member(
+        self, kb_id: str, actor_id: str, principal_id: str, principal_type: str
+    ) -> None:
+        try:
+            await kb_service.remove_member(kb_id, actor_id, principal_id, principal_type)
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+
+    async def handle_list_kb_members(self, kb_id: str, user_id: str) -> List[Dict[str, Any]]:
+        try:
+            return await kb_service.list_members(kb_id, user_id)
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+
+    async def handle_list_kb_documents(self, kb_id: str, user_id: str) -> List[Dict[str, Any]]:
+        has_perm = await kb_service.check_permission(user_id, kb_id, required_role="viewer")
+        if not has_perm:
+            raise HTTPException(status_code=403, detail="无权访问该知识库")
+        return await document_service.list_by_kb(kb_id)
+
+    async def handle_kb_query(
+        self, kb_id: str, query: str, user_id: str
+    ) -> Dict[str, Any]:
+        has_perm = await kb_service.check_permission(user_id, kb_id, required_role="viewer")
+        if not has_perm:
+            raise HTTPException(status_code=403, detail="无权查询该知识库")
+        filter_meta = {"kb_id": kb_id}
+        return await rag_service.get_documents_and_summary(query, filter_meta=filter_meta)
+
+    # ── 重排序 ────────────────────────────────────────────────────────────────
+
+    async def handle_reorder(
+        self, query: str, documents: List[str]
+    ) -> List[Dict[str, Any]]:
+        try:
             result = await reorder_service.reorder_documents(query, documents)
-            
             if result["success"]:
-                # log记录排序结果
-                logger.info(f"【重排序结果】查询: {query} 排序结果: {[f'文档 {doc['document']}: {doc['similarity']:.4f}' for doc in result['documents']]}")
+                logger.info(
+                    f"[Reorder] 排序结果: "
+                    + str([f"{d['document'][:20]}: {d['similarity']:.4f}" for d in result["documents"]])
+                )
                 return result["documents"]
-            else:
-                logger.warning(f"【重排序失败】{result['error']}")
-                # 如果重排序失败，返回原始文档
-                return [{"document": doc, "similarity": 0.0} for doc in documents]
+            logger.warning(f"[Reorder] 失败: {result['error']}")
+            return [{"document": d, "similarity": 0.0} for d in documents]
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"重排序过程中出错: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"重排序失败: {e}")
 
 
 def get_router_service() -> ChatService:
-    """获取路由服务实例（用于依赖注入）"""
     return ChatService()

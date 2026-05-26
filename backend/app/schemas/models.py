@@ -3,24 +3,20 @@ from typing import List, Tuple, Optional
 
 
 class QueryRequest(BaseModel):
-    """查询请求模型"""
     session_id: Optional[str] = None
     query: str
 
 
 class RAGRequest(BaseModel):
-    """RAG检索请求模型"""
     query: str
 
 
 class SessionResponse(BaseModel):
-    """会话响应模型"""
     session_id: str
     history: List[Tuple[str, str]]
 
 
 class AgentStep(BaseModel):
-    """Agent执行步骤模型"""
     thought: Optional[str] = None
     tool: Optional[str] = None
     tool_input: Optional[dict] = None
@@ -28,23 +24,87 @@ class AgentStep(BaseModel):
 
 
 class AgentResponse(BaseModel):
-    """Agent响应模型"""
     response: str
     session_id: str
     steps: Optional[List[AgentStep]] = None
 
 
+class Citation(BaseModel):
+    """单条来源引用"""
+    filename: str
+    chunk_preview: str
+    score: float
+    kb_id: Optional[str] = None
+
+
 class RAGResponse(BaseModel):
-    """RAG检索响应模型"""
     response: str
+    citations: Optional[List[Citation]] = None
 
 
 class ReorderRequest(BaseModel):
-    """重排序请求模型"""
     query: str
     documents: List[str]
 
 
 class ReorderResponse(BaseModel):
-    """重排序响应模型"""
     documents: List[dict]
+
+
+class DocumentInfo(BaseModel):
+    doc_id: str
+    filename: str
+    file_size: int
+    chunk_count: int
+    kb_id: Optional[str] = None
+    upload_time: Optional[str] = None
+
+
+class DocumentListResponse(BaseModel):
+    documents: List[DocumentInfo]
+    total: int
+
+
+# ── 知识库 ──────────────────────────────────────────────────────────────────
+
+class KBCreateRequest(BaseModel):
+    name: str
+    description: str = ""
+    scope: str = "personal"    # personal / dept / company
+    dept_id: Optional[str] = None
+
+
+class KBInfo(BaseModel):
+    kb_id: str
+    name: str
+    description: str
+    owner_id: str
+    scope: str
+    dept_id: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class KBListResponse(BaseModel):
+    kbs: List[KBInfo]
+    total: int
+
+
+class KBMemberRequest(BaseModel):
+    principal_id: str
+    principal_type: str = "user"   # user / dept
+    role: str = "viewer"           # viewer / editor / admin
+
+
+class KBQueryRequest(BaseModel):
+    query: str
+
+
+class KBQueryResponse(BaseModel):
+    summary: str
+    citations: List[Citation]
+    documents: List[str]
+
+
+class KBUpdateRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
