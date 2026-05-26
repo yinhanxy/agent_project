@@ -31,15 +31,30 @@ MAX_BATCH_SIZE = 200 * 1024 * 1024   # 200 MB
 
 
 def _check_file_type(content: bytes, filename: str) -> None:
-    """MIME + 扩展名双重校验，不通过则抛 400"""
-    mime = magic.Magic(mime=True)
-    file_type = mime.from_buffer(content)
+    """MIME + 扩展名双重校验，不通过则抛 400。
+    libmagic 对含有类定义代码的文本文件可能触发内存耗尽异常，
+    此时降级为纯扩展名校验。
+    """
     ext = os.path.splitext(filename)[1].lower()
-    if file_type not in ALLOWED_MIME_TYPES and ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"不支持的文件类型：{filename}（检测到 {file_type}，扩展名 {ext}）",
-        )
+    try:
+        mime = magic.Magic(mime=True)
+        file_type = mime.from_buffer(content)
+        if file_type not in ALLOWED_MIME_TYPES and ext not in ALLOWED_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"不支持的文件类型：{filename}（检测到 {file_type}，扩展名 {ext}）",
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        # libmagic 在某些含代码示例的文本文件上会触发 regex 内存溢出
+        # 降级为纯扩展名校验
+        logger.warning(f"[FileCheck] libmagic 检测失败，降级为扩展名校验: {filename} — {e}")
+        if ext not in ALLOWED_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"不支持的文件类型：{filename}（扩展名 {ext} 不在允许列表中）",
+            )
 
 
 class ChatService:
