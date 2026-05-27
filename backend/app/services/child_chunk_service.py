@@ -19,8 +19,11 @@ class ChildChunkService:
     async def save_batch(self, child_docs: list[Document]) -> list[str]:
         """批量保存子块；为每个 doc 生成 chunk_id 并回填到 metadata。
 
-        Returns: 生成的 chunk_id 列表，顺序与入参一致，
-                 供向量库用作显式主键（保证两边能对齐）。
+        ⚠️ 副作用：会原地修改 child_docs[i].metadata，注入 chunk_id key。
+        调用方应在本函数返回后再把 child_docs 喂给向量库，
+        让两边主键一致（删除时能对齐）。
+
+        Returns: 生成的 chunk_id 列表，顺序与入参一致。
         """
         if not child_docs:
             return []
@@ -33,7 +36,6 @@ class ChildChunkService:
                 chunk_ids.append(chunk_id)
                 db.add(ChildChunk(
                     chunk_id=chunk_id,
-                    doc_id=meta.get("file_id", ""),
                     user_id=meta.get("user_id", ""),
                     kb_id=meta.get("kb_id"),
                     file_id=meta.get("file_id", ""),
@@ -75,7 +77,6 @@ class ChildChunkService:
                 metadata={
                     "chunk_id": row.chunk_id,
                     "file_id": row.file_id,
-                    "doc_id": row.doc_id,
                     "user_id": row.user_id,
                     "kb_id": row.kb_id,
                     "parent_id": row.parent_id,
@@ -87,12 +88,15 @@ class ChildChunkService:
         ]
 
     async def delete_by_doc_id(self, doc_id: str) -> list[str]:
-        """按 doc_id 删除子块，返回被删除的 chunk_id 列表（供向量库同步删）。"""
+        """按 doc_id 删除子块，返回被删除的 chunk_id 列表（供向量库同步删）。
+
+        doc_id 在子块表里以 file_id 字段存（与向量库 metadata key 对齐）。
+        """
         async with AsyncSessionLocal() as db:
-            stmt = select(ChildChunk.chunk_id).where(ChildChunk.doc_id == doc_id)
+            stmt = select(ChildChunk.chunk_id).where(ChildChunk.file_id == doc_id)
             result = await db.execute(stmt)
             chunk_ids = [row[0] for row in result.all()]
-            await db.execute(delete(ChildChunk).where(ChildChunk.doc_id == doc_id))
+            await db.execute(delete(ChildChunk).where(ChildChunk.file_id == doc_id))
             await db.commit()
         logger.info(f"[ChildChunk] 删除 doc_id={doc_id} 共 {len(chunk_ids)} 个子块")
         return chunk_ids

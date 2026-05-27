@@ -109,10 +109,10 @@ class ChildChunk(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     chunk_id = Column(String(128), unique=True, nullable=False, index=True,
                       comment="向量库中该子块的主键，用于反查")
-    doc_id = Column(String(64), nullable=False, index=True)
     user_id = Column(String(64), nullable=False, index=True)
     kb_id = Column(String(64), nullable=True, index=True)
-    file_id = Column(String(64), nullable=False, index=True)
+    file_id = Column(String(64), nullable=False, index=True,
+                     comment="该子块所属的文档 ID（等同 doc_id，与向量库 metadata key 对齐）")
     parent_id = Column(String(128), nullable=True, index=True,
                        comment="父块 ID（semantic 模式下为空）")
     filename = Column(String(500), nullable=True)
