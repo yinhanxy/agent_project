@@ -428,6 +428,69 @@ Authorization: Bearer your-jwt-token
 }
 ```
 
+#### 3.4.4 获取知识库文档列表
+
+**GET /api/vector/list**
+
+功能：获取当前用户已上传到知识库的文档列表，包含每个文档的元数据与分块数。
+
+**请求头**：
+
+| 参数名           | 类型     | 必填 | 描述                 |
+| ------------- | ------ | -- | ------------------ |
+| Authorization | string | 是  | Bearer {jwt-token} |
+
+**响应格式**：
+
+```json
+{
+  "code": 200,
+  "message": "Success",
+  "data": {
+    "documents": [
+      {
+        "doc_id": "string",
+        "filename": "string",
+        "file_size": 0,
+        "chunk_count": 0,
+        "kb_id": "string|null",
+        "upload_time": "string|null"
+      }
+    ],
+    "total": 0
+  }
+}
+```
+
+**示例请求**：
+
+```bash
+GET http://localhost:8000/api/vector/list
+Authorization: Bearer your-jwt-token
+```
+
+**示例响应**：
+
+```json
+{
+  "code": 200,
+  "message": "Success",
+  "data": {
+    "documents": [
+      {
+        "doc_id": "doc_abc123",
+        "filename": "example.pdf",
+        "file_size": 102400,
+        "chunk_count": 12,
+        "kb_id": null,
+        "upload_time": "2025-01-15T10:30:00"
+      }
+    ],
+    "total": 1
+  }
+}
+```
+
 ### 3.5 文档重排序接口
 
 #### 3.5.1 文档中文重排序
