@@ -96,3 +96,26 @@ class ParentChunk(Base):
     content = Column(Text, nullable=False)
     chunk_index = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ChildChunk(Base):
+    """子块文本镜像表。
+
+    向量库只存 embedding + metadata；BM25 索引需要全量子块文本与 metadata，
+    单独存在 MySQL 这里，避免依赖向量库的 list-all 能力。
+    """
+    __tablename__ = "child_chunks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    chunk_id = Column(String(128), unique=True, nullable=False, index=True,
+                      comment="向量库中该子块的主键，用于反查")
+    doc_id = Column(String(64), nullable=False, index=True)
+    user_id = Column(String(64), nullable=False, index=True)
+    kb_id = Column(String(64), nullable=True, index=True)
+    file_id = Column(String(64), nullable=False, index=True)
+    parent_id = Column(String(128), nullable=True, index=True,
+                       comment="父块 ID（semantic 模式下为空）")
+    filename = Column(String(500), nullable=True)
+    content = Column(Text, nullable=False)
+    chunk_index = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
