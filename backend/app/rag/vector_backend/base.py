@@ -1,16 +1,15 @@
 """向量存储后端协议。
 
 实现者：ChromaBackend / MilvusBackend
-业务层契约：所有 filter 用 Chroma 风格的 dict（$or/$and/$eq/$in），
+业务层契约：所有 filter 用 Chroma 风格的 dict（支持 $or / $and / $eq / $ne / $in / $nin），
 backend 内部负责转译为各自原生格式。
 """
-from typing import Protocol, runtime_checkable, Optional
+from typing import Protocol
 
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 
 
-@runtime_checkable
 class VectorStoreBackend(Protocol):
     """向量库后端协议（add / retriever / delete）。
 
@@ -24,11 +23,16 @@ class VectorStoreBackend(Protocol):
     async def as_retriever(
         self,
         k: int,
-        filter_meta: Optional[dict] = None,
+        filter_meta: dict | None = None,
     ) -> BaseRetriever:
-        """返回一个相似度检索器；filter_meta 用 dict 形式。"""
+        """返回一个相似度检索器；filter_meta 用 Chroma 风格 dict。"""
         ...
 
     async def delete_by_filter(self, filter_meta: dict) -> None:
-        """按 metadata 条件删除（如 {"file_id": "xxx"} 或 {"user_id": "yyy"}）。"""
+        """按 metadata 条件删除。
+
+        支持 Chroma 风格 dict（含 $or / $and / $eq / $in 等），
+        如 {"file_id": "xxx"} 或 {"user_id": "yyy"} 或
+        {"$or": [{"user_id": "u1"}, {"kb_id": {"$in": ["a","b"]}}]}。
+        """
         ...
