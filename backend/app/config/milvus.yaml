@@ -1,0 +1,5 @@
+# Milvus 连接配置（仅 VECTOR_STORE_BACKEND=milvus 时生效）
+# 实际 host/port 由 MILVUS_HOST / MILVUS_PORT 环境变量覆盖
+host: localhost
+port: 19530
+collection_name: rag_collection
