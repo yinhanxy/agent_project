@@ -17,6 +17,7 @@ services:
       interval: 30s
       timeout: 20s
       retries: 3
+      start_period: 15s
 
   minio:
     container_name: rag-milvus-minio
@@ -25,8 +26,8 @@ services:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
     ports:
-      - "9001:9001"
-      - "9000:9000"
+      - "127.0.0.1:9001:9001"   # console UI，仅本地可达
+      - "127.0.0.1:9000:9000"   # API 端口，仅本地可达（milvus 容器走内网 minio:9000）
     volumes:
       - ./data/milvus/minio:/minio_data
     command: minio server /minio_data --console-address ":9001"
@@ -35,12 +36,14 @@ services:
       interval: 30s
       timeout: 20s
       retries: 3
+      start_period: 10s
 
   milvus:
     container_name: rag-milvus-standalone
     image: milvusdb/milvus:v2.5.0
     command: ["milvus", "run", "standalone"]
     security_opt:
+      # Milvus 依赖部分受 seccomp 限制的 syscall，官方推荐关闭，避免 SIGSYS 崩溃
       - seccomp:unconfined
     environment:
       ETCD_ENDPOINTS: etcd:2379
@@ -57,5 +60,7 @@ services:
       - "19530:19530"
       - "9091:9091"
     depends_on:
-      - etcd
-      - minio
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
