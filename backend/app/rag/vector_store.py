@@ -78,13 +78,18 @@ class VectorStoreService:
 
     @staticmethod
     def _extract_user_and_kbs(filter_meta: dict = None) -> tuple:
-        """从 _build_rag_filter 产出的 dict 里抽 user_id 与 kb_ids。
+        """从 _build_rag_filter 产出的 dict 里抽 user_id 与 kb_ids，
+        转成 BM25 SQL 过滤条件。
 
         预期形态：
           {"$or": [{"user_id": {"$eq": "..."}},
                    {"kb_id": {"$in": [...]}}]}
         或：
           {"user_id": {"$eq": "..."}}
+
+        限制：本函数只识别 user_id / kb_id 两个字段。如果 filter_meta 含其它字段
+        （如未来加 dept_id），BM25 召回范围会比向量检索宽（不漏召回，但可能多召回）。
+        若加新字段，需要同步扩展这里。
         """
         if not filter_meta:
             return None, None
@@ -100,10 +105,16 @@ class VectorStoreService:
                     for sub in v:
                         walk(sub)
                 elif k == "user_id":
-                    if isinstance(v, dict) and "$eq" in v:
-                        user_id = v["$eq"]
-                    elif isinstance(v, str):
-                        user_id = v
+                    new_uid = v["$eq"] if isinstance(v, dict) and "$eq" in v else (
+                        v if isinstance(v, str) else None
+                    )
+                    if new_uid is not None:
+                        if user_id is not None and user_id != new_uid:
+                            logger.warning(
+                                f"[_extract_user_and_kbs] filter 含多个不同 user_id "
+                                f"({user_id!r} vs {new_uid!r})，取后者"
+                            )
+                        user_id = new_uid
                 elif k == "kb_id":
                     if isinstance(v, dict) and "$in" in v:
                         kb_ids.extend(v["$in"])
@@ -219,33 +230,52 @@ class VectorStoreService:
                     logger.error(f"[VectorStore] {original_name} 切片为空，跳过")
                     continue
 
-                # 1) 先写 MySQL ChildChunk，生成 chunk_id 并回填 metadata
-                await child_chunk_service.save_batch(child_docs)
+                child_saved = False  # 补偿回滚标记
+                try:
+                    # 1) 先写 MySQL ChildChunk，生成 chunk_id 并回填 metadata
+                    await child_chunk_service.save_batch(child_docs)
+                    child_saved = True
 
-                # 2) 再写向量库（metadata 已含 chunk_id，两边对齐）
-                await self.backend.add_documents(child_docs)
+                    # 2) 再写向量库（metadata 已含 chunk_id，两边对齐）
+                    await self.backend.add_documents(child_docs)
 
-                # 3) 父块写 MySQL
-                if parent_docs:
-                    await parent_chunk_service.save_batch(parent_docs)
+                    # 3) 父块写 MySQL
+                    if parent_docs:
+                        await parent_chunk_service.save_batch(parent_docs)
 
-                # 4) 文档记录
-                if user_id:
-                    await document_service.save_record(
-                        doc_id=doc_id,
-                        user_id=user_id,
-                        filename=original_name,
-                        md5_hex=md5_hex,
-                        file_size=file_size,
-                        chunk_count=len(child_docs),
-                        kb_id=kb_id,
+                    # 4) 文档记录
+                    if user_id:
+                        await document_service.save_record(
+                            doc_id=doc_id,
+                            user_id=user_id,
+                            filename=original_name,
+                            md5_hex=md5_hex,
+                            file_size=file_size,
+                            chunk_count=len(child_docs),
+                            kb_id=kb_id,
+                        )
+
+                    processed.append(doc_id)
+                    logger.info(
+                        f"[VectorStore] {original_name} → doc_id={doc_id}，"
+                        f"{len(child_docs)} 子块，{len(parent_docs)} 父块"
                     )
-
-                processed.append(doc_id)
-                logger.info(
-                    f"[VectorStore] {original_name} → doc_id={doc_id}，"
-                    f"{len(child_docs)} 子块，{len(parent_docs)} 父块"
-                )
+                except Exception as write_err:
+                    # 补偿回滚：向量库写入失败时清理已写入的 MySQL 数据
+                    logger.error(
+                        f"[VectorStore] {original_name} 写入链路失败: {write_err}，"
+                        f"开始补偿回滚 doc_id={doc_id}",
+                        exc_info=True,
+                    )
+                    if child_saved:
+                        try:
+                            await child_chunk_service.delete_by_doc_id(doc_id)
+                        except Exception as rollback_err:
+                            logger.error(
+                                f"[VectorStore] 回滚 ChildChunk 失败 doc_id={doc_id}: {rollback_err}",
+                                exc_info=True,
+                            )
+                    raise  # 继续抛给外层 except，保持原有错误流
 
             except Exception as e:
                 logger.error(f"[VectorStore] {original_name} 处理失败: {e}", exc_info=True)
