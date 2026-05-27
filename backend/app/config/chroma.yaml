@@ -1,10 +1,12 @@
 collection_name: rag_collection
 persist_directory: data/chromadb
+# 每次召回的子块数量（父子模式下实际返回父块数 ≤ k）
 k: 5
-data_path: data
-md5_hex_store: data/md5_hex_store/md5_hex_store.txt
-allow_knowledge_file_types: ["txt", "pdf", "md", "pptx", "docx"]
 
-chunk_size: 200
-chunk_overlap: 20
-separators : ["\n\n", "\n", "。", "！", "？", "!", "?", " ", ""]
+data_path: data
+allow_knowledge_file_types: ["txt", "pdf", "md", "docx", "pptx"]
+
+# ── 切片参数（SmartTextSplitter 动态按语言选取，以下为参考默认值）──────────
+# 中文：child_size=150  parent_size=800  fixed_size=500
+# 英文：child_size=300  parent_size=1500 fixed_size=800
+# separators 由 SmartTextSplitter 按语言自动选择，无需在此配置

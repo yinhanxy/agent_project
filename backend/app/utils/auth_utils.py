@@ -108,14 +108,18 @@ async def fetch_user_info_from_django_api(token: str, url: str) -> Optional[Dict
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json"
         }
-        # 调用Django API
+        # 调用Django API，禁用系统代理（避免本地127.0.0.1请求被代理拦截）
         response = requests.get(
             url=url,
-            headers=headers
+            headers=headers,
+            proxies={"http": None, "https": None},
+            timeout=10,
         )
         
         if response.status_code == 200:
-            user_data = response.json()
+            resp_json = response.json()
+            # Django 返回 {"success":true,"data":{...}}，取内层 data
+            user_data = resp_json.get("data", resp_json)
             logger.info(f"【debug】 从Django API获取用户信息成功", extra={"path": "auth_utils.fetch_user_info_from_django_api"})
             return user_data
         else:
@@ -124,6 +128,20 @@ async def fetch_user_info_from_django_api(token: str, url: str) -> Optional[Dict
     except Exception as e:
         logger.error(f"【debug】 调用Django API时出错: {str(e)}", extra={"path": "auth_utils.fetch_user_info_from_django_api"})
         return None
+
+
+async def get_current_user_is_admin(
+    user_id: str = Depends(get_current_user_id),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> bool:
+    """判断当前用户是否为管理员"""
+    try:
+        user_info = await get_user_info_from_redis(user_id, credentials)
+        if isinstance(user_info, dict):
+            return bool(user_info.get("is_admin", False))
+    except Exception as e:
+        logger.error(f"[is_admin] exception: {e}", extra={"path": "auth_utils.get_current_user_is_admin"})
+    return False
 
 
 async def get_user_info_from_redis(user_id: str, credentials: HTTPAuthorizationCredentials):
@@ -141,48 +159,35 @@ async def get_user_info_from_redis(user_id: str, credentials: HTTPAuthorizationC
     
     try:
         # 从Redis中获取用户信息
-        user_info = await redis_client.get(key)
-        if user_info is None:
+        raw = await redis_client.get(key)
+        if raw is None:
             # 降级调用django查询用户信息
             user_data = await fetch_user_info_from_django_api(credentials.credentials, os.getenv("DJANGO_API_URL") + "/user/detail/")
             if user_data:
                 # 将用户信息存入Redis，设置过期时间为1小时
-                await set_redis_cache(
-                    key,
-                    user_data,
-                    expire=3600
-                )
-                user_info = user_data
+                await set_redis_cache(key, user_data, expire=3600)
+            user_info = user_data
         else:
             # 如果从Redis中获取到数据，尝试将其解析为字典
             try:
-                
-                user_info = json.loads(user_info)
+                user_info = json.loads(raw)
             except json.JSONDecodeError:
                 # 如果解析失败，删除旧数据并重新获取
                 await redis_client.delete(key)
                 user_data = await fetch_user_info_from_django_api(credentials.credentials, os.getenv("DJANGO_API_URL") + "/user/detail/")
                 if user_data:
-                    await set_redis_cache(
-                        key,
-                        user_data,
-                        expire=3600
-                    )
-                    user_info = user_data
-                else:
-                    user_info = None
+                    await set_redis_cache(key, user_data, expire=3600)
+                user_info = user_data
     except UnicodeDecodeError:
         # 处理解码错误，删除旧数据并重新获取
         await redis_client.delete(key)
         user_data = await fetch_user_info_from_django_api(credentials.credentials, os.getenv("DJANGO_API_URL") + "/user/detail/")
         if user_data:
-            await set_redis_cache(
-                key,
-                user_data,
-                expire=3600
-            )
-            user_info = user_data
-        else:
-            user_info = None
+            await set_redis_cache(key, user_data, expire=3600)
+        user_info = user_data
+
+    # 兼容旧格式：如果缓存里存的是 Django 包装响应 {"success":..., "data":{...}}，解包取内层
+    if isinstance(user_info, dict) and "data" in user_info and isinstance(user_info.get("data"), dict):
+        user_info = user_info["data"]
 
     return user_info

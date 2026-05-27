@@ -74,6 +74,7 @@ class User(AbstractBaseUser):
     email = models.EmailField(unique=True, blank=False)
     telephone = models.CharField(max_length=11, unique=True,null=True, blank=False)
     is_active = models.BooleanField(default=False)
+    is_admin = models.BooleanField(default=False)
     # 用户状态， 只需要关注status字段
     status = models.IntegerField(
         choices=UserStatusChoice,

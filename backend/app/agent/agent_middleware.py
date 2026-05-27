@@ -1,53 +1,29 @@
-from langchain.agents import AgentState
-from langchain.agents.middleware import wrap_tool_call, wrap_model_call, after_model, before_model, after_agent, \
-    before_agent
-from langgraph.runtime import Runtime
-
+"""
+Agent 生命周期钩子 —— 纯日志，无框架依赖。
+AgentLoop 在关键节点调用这些函数。
+"""
 from app.core.logger_handler import logger
 
 
-@before_agent
-def log_before_agent(status: AgentState, runtime: Runtime):
-    """agent 运行前执行此函数"""
-    logger.info(f"[before_agent] agent启动， 输入：{status['messages']}， 共{len(status['messages'])}条消息")
+def on_agent_start(messages: list):
+    logger.info(f"[Agent] 启动，消息数: {len(messages)}")
 
 
-@after_agent
-def log_after_agent(status: AgentState, runtime: Runtime):
-    """agent 运行后执行此函数"""
-    logger.info(f"[after_agent] agent运行结束， 输出：{status['messages']}， 共{len(status['messages'])}条消息")
-
-@before_model
-def log_before_model(status: AgentState, runtime: Runtime):
-    """model 运行前执行此函数"""
-    logger.info(f"[before_model] model启动， 输入：{status['messages']}， 共{len(status['messages'])}条消息")
+def on_agent_end(response: str, steps: list):
+    logger.info(f"[Agent] 结束，工具调用次数: {len(steps)}，响应长度: {len(response)}")
 
 
-@after_model
-def log_after_model(status: AgentState, runtime: Runtime):
-    """model 运行后执行此函数"""
-    logger.info(f"[after_model] model运行结束， 输出：{status['messages']}， 共{len(status['messages'])}条消息")
-
-@wrap_model_call
-def model_call_hook(request, handler):
-    """model 调用前执行此函数"""
-    logger.info("模型调用了")
-    return handler(request)
-
-@wrap_tool_call
-def tool_call_hook(request, handler):
-    """tool 调用前执行此函数"""
-    logger.info(f"工具{request.tool_call['name']}调用了, 传入参数{request.tool_call['args']}")
-    return handler(request)
+def on_tool_call(name: str, arguments: str):
+    logger.info(f"[Tool] 调用 {name}，参数: {arguments}")
 
 
-def get_middleware():
-    """返回本模块的所有中间件"""
-    return [
-        log_before_agent,
-        log_after_agent,
-        log_before_model,
-        log_after_model,
-        model_call_hook,
-        tool_call_hook,
-    ]
+def on_tool_result(name: str, result: str):
+    logger.info(f"[Tool] {name} 返回: {result[:300]}")
+
+
+def on_model_call(messages: list):
+    logger.info(f"[LLM] 调用模型，消息数: {len(messages)}")
+
+
+def on_model_response(has_tool_calls: bool, content_len: int):
+    logger.info(f"[LLM] 响应，包含工具调用: {has_tool_calls}，内容长度: {content_len}")

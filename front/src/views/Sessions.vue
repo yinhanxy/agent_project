@@ -9,7 +9,7 @@
           <h2>历史会话</h2>
         </div>
         <van-button type="primary" @click="createNewSession">
-          新会话
+          新对话
         </van-button>
       </div>
       
@@ -22,7 +22,7 @@
         <van-icon name="chat-o" size="64" color="#ccc" />
         <p>暂无会话记录</p>
         <van-button type="primary" @click="createNewSession">
-          创建新会话
+          新对话
         </van-button>
       </div>
       
@@ -52,34 +52,14 @@
       </div>
     </div>
     
-    <!-- 新会话对话框 -->
-    <van-popup v-model:show="showNewSessionDialog" position="bottom">
-      <div class="new-session-dialog">
-        <h3>新会话</h3>
-        <van-field
-          v-model="newSessionQuery"
-          type="textarea"
-          rows="3"
-          placeholder="请输入您的问题..."
-          maxlength="200"
-        />
-        <div class="dialog-buttons">
-          <van-button @click="showNewSessionDialog = false">取消</van-button>
-          <van-button type="primary" @click="confirmNewSession" :disabled="!newSessionQuery.trim()">
-            开始对话
-          </van-button>
-        </div>
-      </div>
-    </van-popup>
-    
     <tab-bar />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue';
+import { onMounted, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { showToast, Toast } from 'vant';
+import { showToast } from 'vant';
 import TabBar from '../components/TabBar.vue';
 import { useSessionStore } from '../store/session';
 import { useUserStore } from '../store/user';
@@ -89,8 +69,6 @@ const route = useRoute();
 const sessionStore = useSessionStore();
 const userStore = useUserStore();
 
-const showNewSessionDialog = ref(false);
-const newSessionQuery = ref('');
 
 // 监听路由变化，确保每次访问会话管理页面时自动刷新会话列表
 watch(() => route.path, async (newPath) => {
@@ -104,7 +82,7 @@ const loadSessions = async () => {
   // 检查是否登录
   if (!userStore.getLoginStatus) {
     showToast('请先登录');
-    router.push('/login');
+    router.push('/login?redirect=/sessions');
     return;
   }
   
@@ -184,43 +162,9 @@ const deleteSession = async (sessionId) => {
   }
 };
 
-// 打开新会话对话框
+// 开始新对话：直接跳转到聊天页，不需要先输入问题
 const createNewSession = () => {
-  showNewSessionDialog.value = true;
-};
-
-// 确认创建新会话
-const confirmNewSession = async () => {
-  if (!newSessionQuery.value.trim()) return;
-  
-  // 显示加载状态，保存返回的toast实例
-  const toastInstance = showToast({
-    type: 'loading',
-    message: '创建会话中...',
-    forbidClick: true,
-    duration: 0
-  });
-  
-  try {
-    const result = await sessionStore.createSession(newSessionQuery.value);
-    if (result.success && result.data?.session_id) {
-      showToast('会话创建成功');
-      showNewSessionDialog.value = false;
-      newSessionQuery.value = '';
-      // 跳转到带会话ID的聊天页面
-      router.push(`/aichat/${result.data.session_id}`);
-    } else {
-      showToast(result.message || '创建会话失败');
-    }
-  } catch (error) {
-    showToast('创建会话失败');
-    console.error('创建会话失败:', error);
-  } finally {
-    // 使用toast实例的关闭方法
-    if (toastInstance && toastInstance.close) {
-      toastInstance.close();
-    }
-  }
+  router.push('/aichat');
 };
 </script>
 
@@ -295,28 +239,4 @@ const confirmNewSession = async () => {
   background-color: #f0f9ff !important;
 }
 
-.new-session-dialog {
-  background-color: #fff;
-  border-radius: 16px 16px 0 0;
-  padding: 20px;
-}
-
-.new-session-dialog h3 {
-  font-size: 18px;
-  font-weight: bold;
-  color: #333;
-  margin: 0 0 20px 0;
-  text-align: center;
-}
-
-.dialog-buttons {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 20px;
-}
-
-.dialog-buttons van-button {
-  flex: 1;
-  margin: 0 5px;
-}
 </style>

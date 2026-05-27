@@ -8,25 +8,13 @@ export default defineConfig({
     port: 3000,
     host: true, // 允许局域网访问
     proxy: {
-      // AI相关接口代理到8000端口
-      '/api/agent': {
+      // 所有/api接口代理到FastAPI (8000)
+      '/api': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         ws: true
       },
-      '/api/rag': {
-        target: 'http://127.0.0.1:8000',
-        changeOrigin: true
-      },
-      '/api/session': {
-        target: 'http://127.0.0.1:8000',
-        changeOrigin: true
-      },
-      '/api/vector': {
-        target: 'http://127.0.0.1:8000',
-        changeOrigin: true
-      },
-      // 用户相关接口代理到8001端口
+      // 用户相关接口代理到Django (8001)
       '/user': {
         target: 'http://127.0.0.1:8001',
         changeOrigin: true

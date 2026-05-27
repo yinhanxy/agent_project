@@ -27,18 +27,20 @@ class DashScopeEmbeddingsWrapper(Embeddings):
             raise ImportError("需要安装 dashscope 库: pip install dashscope")
     
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        """批量嵌入文档"""
-        results = []
-        for text in texts:
+        """批量嵌入文档（每批最多 25 条，减少 API 调用次数）"""
+        BATCH_SIZE = 10
+        results: List[List[float]] = [[] for _ in texts]
+        for i in range(0, len(texts), BATCH_SIZE):
+            batch = texts[i:i + BATCH_SIZE]
             resp = self.dashscope.TextEmbedding.call(
                 model=self.model_name,
-                input=text
+                input=batch,
             )
             if resp.status_code == 200:
-                results.append(resp.output['embedding'])
+                for item in resp.output["embeddings"]:
+                    results[i + item["text_index"]] = item["embedding"]
             else:
-                logger.error(f"阿里云嵌入调用失败: {resp.message}")
-                results.append([])
+                raise RuntimeError(f"阿里云嵌入调用失败（模型: {self.model_name}）: {resp.message}")
         return results
     
     def embed_query(self, text: str) -> List[float]:
@@ -47,11 +49,13 @@ class DashScopeEmbeddingsWrapper(Embeddings):
             model=self.model_name,
             input=text
         )
-        if resp.status_code == 200:
-            return resp.output['embedding']
-        else:
-            logger.error(f"阿里云嵌入调用失败: {resp.message}")
-            return []
+        if resp.status_code != 200:
+            raise RuntimeError(f"阿里云嵌入调用失败（模型: {self.model_name}）: {resp.message}")
+        # DashScope 响应统一格式：{"embeddings": [{"embedding": [...], "text_index": 0}]}
+        embeddings = resp.output.get("embeddings") or []
+        if not embeddings:
+            raise RuntimeError(f"阿里云嵌入响应为空（模型: {self.model_name}）")
+        return embeddings[0]["embedding"]
 
 
 class BaseModelFactory(ABC):
@@ -121,10 +125,10 @@ class EmbedModelFactory(BaseModelFactory):
         
         elif embed_type == "ALIYUN":
             model_name = os.getenv("ALIYUN_EMBED_MODEL_NAME", "qwen3-embedding")
-            api_key = os.getenv("ALIYUN_ACCESS_KEY_SECRET")
-            
+            api_key = os.getenv("ALIYUN_EMBED_API_KEY") or os.getenv("ALIYUN_ACCESS_KEY_SECRET")
+
             logger.info(f"📦 EmbedModel 使用阿里云嵌入模型: {model_name}")
-            
+
             return DashScopeEmbeddingsWrapper(
                 model_name=model_name,
                 api_key=api_key

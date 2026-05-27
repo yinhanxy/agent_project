@@ -77,6 +77,24 @@ const routes = [
       keepAlive: true
     }
   },
+  {
+    path: '/knowledge',
+    name: 'KnowledgeBase',
+    component: () => import('../views/KnowledgeBase.vue'),
+    meta: {
+      title: '知识库',
+      keepAlive: true
+    }
+  },
+  {
+    path: '/admin/accounts',
+    name: 'AccountManagement',
+    component: () => import('../views/AccountManagement.vue'),
+    meta: {
+      title: '账号管理',
+      keepAlive: false
+    }
+  },
 ]
 
 const router = createRouter({

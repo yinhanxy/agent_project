@@ -12,6 +12,7 @@
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.views import APIView
 
+from .models import User
 from .serializers import LoginSerializer, UserSerializer, ResetPasswordSerializer, RegisterSerializer, UserUpdateSerializer
 from datetime import datetime
 from .authentications import JWTAuthentication, JWTTokenGenerator
@@ -224,6 +225,7 @@ def get_user_info(user):
         "telephone": serializer.data.get('telephone'),
         "gender": serializer.data.get('gender'),
         "bio": serializer.data.get('bio'),
+        "is_admin": serializer.data.get('is_admin', False),
         "create_time": serializer.data.get('date_joined'),
         "last_login": serializer.data.get('last_login'),
     }
@@ -317,6 +319,46 @@ class UserUpdateView(AuthenticatedView):
             return Response({"message": "用户信息更新成功", "user": UserSerializer(user).data, "token": new_token}, status=status.HTTP_200_OK)
         else:
             return Response({"detail": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class UserListView(AuthenticatedView):
+    """管理员：获取所有用户列表"""
+
+    def get(self, request) -> Response:
+        if not getattr(request.user, 'is_admin', False):
+            return Response({"detail": "无权限"}, status=status.HTTP_403_FORBIDDEN)
+        users = User.objects.all().order_by('date_joined')
+        data = []
+        for u in users:
+            data.append({
+                "uuid": str(u.uuid),
+                "username": u.username,
+                "email": u.email,
+                "telephone": u.telephone,
+                "is_admin": u.is_admin,
+                "status": u.status,
+                "date_joined": u.date_joined.isoformat() if u.date_joined else None,
+                "last_login": u.last_login.isoformat() if u.last_login else None,
+            })
+        return Response({"users": data, "total": len(data)}, status=status.HTTP_200_OK)
+
+
+class UserSetAdminView(AuthenticatedView):
+    """管理员：设置/取消某用户的管理员权限"""
+
+    def patch(self, request, uuid) -> Response:
+        if not getattr(request.user, 'is_admin', False):
+            return Response({"detail": "无权限"}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            target = User.objects.get(uuid=uuid)
+        except User.DoesNotExist:
+            return Response({"detail": "用户不存在"}, status=status.HTTP_404_NOT_FOUND)
+        if str(target.uuid) == str(request.user.uuid):
+            return Response({"detail": "不能修改自己的权限"}, status=status.HTTP_400_BAD_REQUEST)
+        target.is_admin = not target.is_admin
+        target.save()
+        clear_user_cache(target.uuid)
+        return Response({"uuid": str(target.uuid), "is_admin": target.is_admin}, status=status.HTTP_200_OK)
 
 
 class UserLogOutView(APIView):

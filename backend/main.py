@@ -17,6 +17,7 @@ from app.core.rate_limit import RateLimitMiddleware
 from app.core.logger_handler import logger
 
 from app.rag.reorder_service import check_and_download_reranker_model
+from app.scheduler.scheduler import start_scheduler, stop_scheduler
 
 # 加载环境变量
 load_dotenv()
@@ -82,8 +83,12 @@ async def startup_event():
     check_and_download_reranker_model()
     logger.info("重排序模型检查完成")
 
+    # 启动持续更新调度器（SCHEDULER_ENABLED=true 时生效）
+    start_scheduler()
+
 @app.on_event("shutdown")
 async def shutdown_event():
     """应用关闭时关闭Redis连接"""
+    stop_scheduler()
     await close_redis()
     logger.info("Redis连接已关闭")

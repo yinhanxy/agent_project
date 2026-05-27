@@ -16,6 +16,7 @@ export const useUserStore = defineStore('user', {
     userInfo: null,
     token: '',
     isLogin: false,
+    isAdmin: false,
     userBio: '这是我的个人简介'
   }),
   
@@ -243,6 +244,14 @@ export const useUserStore = defineStore('user', {
       }
     },
     
+    // 清除本地认证状态（token过期/失效时调用）
+    clearAuth() {
+      this.userInfo = null;
+      this.token = '';
+      this.isLogin = false;
+      localStorage.removeItem('jwt_token');
+    },
+
     // 用户注册
     async register(userData) {
       try {

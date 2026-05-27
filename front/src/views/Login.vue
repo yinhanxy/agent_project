@@ -53,11 +53,12 @@
 
 <script setup>
 import { ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import { showToast } from 'vant';
 import { useUserStore } from '../store/user';
 
 const router = useRouter();
+const route = useRoute();
 const userStore = useUserStore();
 
 const username = ref('');
@@ -84,8 +85,10 @@ const onSubmit = async (values) => {
         type: 'success',
         message: result.message
       });
-      
-      router.push('/');
+
+      // 登录成功后跳回原页面（如果有 redirect 参数），否则去首页
+      const redirect = route.query.redirect || '/'
+      router.push(redirect);
     } else {
       showToast({
         type: 'fail',

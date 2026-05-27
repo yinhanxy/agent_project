@@ -9,8 +9,8 @@
     
     <div class="chat-content">
       <div class="messages-container" ref="messagesContainer">
-        <div 
-          v-for="(message, index) in messages" 
+        <div
+          v-for="(message, index) in messages"
           :key="index"
           :class="['message', message.role === 'user' ? 'user-message' : 'ai-message']"
         >
@@ -21,6 +21,27 @@
               <span></span>
             </div>
             <div v-else v-html="formatMessage(message.content)"></div>
+          </div>
+          <div v-if="message.role === 'assistant' && message.usedRag" class="rag-badge">
+            <van-icon name="search" size="11" />
+            已检索知识库
+          </div>
+          <div
+            v-if="message.role === 'assistant' && message.citations && message.citations.length"
+            class="citations-section"
+          >
+            <div class="citations-toggle" @click="message.showCitations = !message.showCitations">
+              <van-icon name="description-o" size="12" />
+              参考来源 ({{ message.citations.length }})
+              <van-icon :name="message.showCitations ? 'arrow-up' : 'arrow-down'" size="12" />
+            </div>
+            <div v-if="message.showCitations" class="citations-list">
+              <div v-for="(c, ci) in message.citations" :key="ci" class="citation-item">
+                <van-icon name="label-o" size="11" color="#aaa" />
+                <span class="citation-filename">{{ c.filename }}</span>
+                <span class="citation-score">{{ (c.score * 100).toFixed(0) }}%</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -76,7 +97,7 @@ const getCsrfToken = () => {
 
 // 聊天消息
 const messages = ref([
-  { role: 'assistant', content: '你好！我是AI助手，有什么可以帮助你的吗？' }
+  { role: 'assistant', content: '你好！我是AI助手，有什么可以帮助你的吗？', citations: [], showCitations: false, usedRag: false }
 ]);
 const userInput = ref('');
 const messagesContainer = ref(null);
@@ -121,9 +142,11 @@ const formatMessage = (content) => {
 const sendMessage = async () => {
   if (!userInput.value.trim() || isLoading.value) return;
   
-  // 检查是否登录
-  if (!userStore.getLoginStatus) {
+  // 检查是否登录（以实际 token 为准，避免 isLogin 持久化导致误判）
+  const token = localStorage.getItem('jwt_token') || userStore.token;
+  if (!token) {
     showToast('请先登录');
+    router.push('/login');
     return;
   }
   
@@ -133,7 +156,7 @@ const sendMessage = async () => {
   userInput.value = '';
   
   // 添加AI消息占位
-  messages.value.push({ role: 'assistant', content: '' });
+  messages.value.push({ role: 'assistant', content: '', citations: [], showCitations: false, usedRag: false });
   
   // 滚动到底部
   await nextTick();
@@ -177,6 +200,12 @@ const fetchAIResponse = async (userMessage) => {
     });
     
     if (!response.ok) {
+      if (response.status === 401) {
+        userStore.clearAuth();
+        showToast('登录已过期，请重新登录');
+        router.push('/login');
+        return;
+      }
       const error = await response.json().catch(() => ({}));
       throw new Error(error.detail || `HTTP error! status: ${response.status}`);
     }
@@ -205,6 +234,12 @@ const fetchAIResponse = async (userMessage) => {
           
           switch (json.type) {
             case 'step':
+              if (json.data?.tool === 'rag_summary_tools') {
+                const lastMsg = messages.value[messages.value.length - 1];
+                if (lastMsg && lastMsg.role === 'assistant') {
+                  lastMsg.usedRag = true;
+                }
+              }
               break;
             case 'response':
               const content = json.content || '';
@@ -235,6 +270,13 @@ const fetchAIResponse = async (userMessage) => {
                 // 如果当前路由没有sessionId参数，跳转到带sessionId的路由
                 if (!route.params.sessionId) {
                   router.push(`/aichat/${json.session_id}`);
+                }
+              }
+              // 将检索来源附加到最后一条 AI 消息
+              if (json.citations && json.citations.length) {
+                const lastMsg = messages.value[messages.value.length - 1];
+                if (lastMsg && lastMsg.role === 'assistant') {
+                  lastMsg.citations = json.citations;
                 }
               }
               break;
@@ -281,6 +323,8 @@ watch(messages, () => {
 // 监听路由参数变化，重新加载会话历史
 watch(() => route.params.sessionId, async (newSessionId) => {
   if (newSessionId) {
+    // 立即设置 sessionId，避免用户在异步加载完成前发消息时创建新会话
+    sessionId.value = newSessionId;
     try {
       const result = await sessionStore.getSession(newSessionId);
       if (result.success && sessionStore.currentSession) {
@@ -329,7 +373,7 @@ const loadSessionHistory = (session) => {
     // 加载历史消息
     session.history.forEach(([userMsg, aiMsg]) => {
       messages.value.push({ role: 'user', content: userMsg });
-      messages.value.push({ role: 'assistant', content: aiMsg });
+      messages.value.push({ role: 'assistant', content: aiMsg, citations: [], showCitations: false, usedRag: false });
     });
     // 设置会话ID
     sessionId.value = session.session_id;
@@ -559,5 +603,69 @@ const loadSessionHistory = (session) => {
 :deep(th) {
   background-color: #f2f2f2;
   font-weight: bold;
+}
+
+/* 已检索知识库徽标 */
+.rag-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 5px;
+  padding: 2px 7px;
+  background: #eef6ff;
+  color: #1989fa;
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+/* 参考来源 */
+.citations-section {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(0, 0, 0, 0.07);
+}
+
+.citations-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #969799;
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 0;
+}
+
+.citations-toggle:hover {
+  color: #646566;
+}
+
+.citations-list {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.citation-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #646566;
+  padding: 1px 0;
+}
+
+.citation-filename {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.citation-score {
+  flex-shrink: 0;
+  color: #1989fa;
+  font-weight: 500;
 }
 </style>

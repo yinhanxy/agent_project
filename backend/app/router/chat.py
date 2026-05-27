@@ -100,6 +100,8 @@ async def query_rag(
 ):
     """RAG 检索（返回摘要 + 来源引用）"""
     result = await router_service.handle_rag_query_with_citations(request.query)
+    if result.get("error") == "retrieval_failed":
+        raise HTTPException(status_code=503, detail=result.get("summary", "检索服务暂时不可用"))
     citations = [Citation(**c) for c in result.get("citations", [])]
     return success_response(data=RAGResponse(response=result["summary"], citations=citations))
 
@@ -354,6 +356,8 @@ async def query_kb(
 ):
     """在指定知识库中检索（需 viewer 以上权限），返回摘要 + 来源引用"""
     result = await router_service.handle_kb_query(kb_id, request.query, user_id)
+    if result.get("error") == "retrieval_failed":
+        raise HTTPException(status_code=503, detail=result.get("summary", "检索服务暂时不可用"))
     citations = [Citation(**c) for c in result.get("citations", [])]
     return success_response(data=KBQueryResponse(
         summary=result.get("summary", ""),

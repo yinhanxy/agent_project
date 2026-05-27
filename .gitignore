@@ -94,3 +94,12 @@ ehthumbs_vista.db
 # Docker
 Dockerfile
 .dockerignore
+
+# Claude Code 本地配置与 skills（不进仓库）
+.claude/
+docs/superpowers/
+
+# 面试/简历相关 markdown（个人材料，不推到公共仓库）
+glossary.md
+interview_questions.md
+resume_interview_qa.md

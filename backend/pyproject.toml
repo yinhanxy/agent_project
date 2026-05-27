@@ -24,7 +24,7 @@ dependencies = [
     "aiomysql>=0.3.2",
     "redis>=7.3.0",
     "langchain-ollama>=1.0.1",
-    "langchain>=1.2.13",
+    "openai>=1.0.0",
     "langchain-chroma>=1.1.0",
     "python-multipart>=0.0.22",
     "dashscope>=1.25.14",
@@ -41,6 +41,9 @@ dependencies = [
     "unstructured[all-docs]>=0.22.20",
     "langsmith>=0.7.22",
     "langgraph-cli[inmem]>=0.1.54",
+    "apscheduler>=3.10.0",
+    "rank-bm25>=0.2.2",
+    "jieba>=0.42.1",
 ]
 
 # 开发依赖

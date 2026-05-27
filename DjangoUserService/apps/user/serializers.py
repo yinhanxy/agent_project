@@ -58,7 +58,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ('uuid', 'username', 'email', 'telephone', 'gender', 'bio', 'avatar', 'status', 'date_joined', 'last_login')
+        fields = ('uuid', 'username', 'email', 'telephone', 'gender', 'bio', 'avatar', 'status', 'is_admin', 'date_joined', 'last_login')
 
 
 class ResetPasswordSerializer(serializers.Serializer):

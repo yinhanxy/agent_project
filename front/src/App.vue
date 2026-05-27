@@ -14,7 +14,25 @@
 </template>
 
 <script setup>
-// App.vue 作为根组件
+import { onMounted } from 'vue'
+import axios from 'axios'
+import { useUserStore } from './store/user'
+
+const userStore = useUserStore()
+
+// 应用启动时拉取管理员状态，解决刷新后状态丢失
+onMounted(async () => {
+  const token = localStorage.getItem('jwt_token')
+  if (!token) return
+  try {
+    const res = await axios.get('/api/kb/list', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    if (typeof res.data?.data?.is_admin === 'boolean') {
+      userStore.isAdmin = res.data.data.is_admin
+    }
+  } catch {}
+})
 </script>
 
 <style>

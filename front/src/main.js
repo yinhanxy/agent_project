@@ -4,16 +4,16 @@ import router from './router'
 import pinia from './store'
 
 // 导入Vant组件库
-import { 
-  Button, 
-  NavBar, 
-  Tabbar, 
-  TabbarItem, 
-  Tab, 
-  Tabs, 
-  List, 
-  PullRefresh, 
-  Cell, 
+import {
+  Button,
+  NavBar,
+  Tabbar,
+  TabbarItem,
+  Tab,
+  Tabs,
+  List,
+  PullRefresh,
+  Cell,
   CellGroup,
   Grid,
   GridItem,
@@ -23,7 +23,50 @@ import {
   Image,
   Toast,
   Icon,
-  Popup
+  Popup,
+  Dialog,
+  RadioGroup,
+  Radio,
+  Loading,
+  Tag,
+  Switch,
+  Checkbox,
+  CheckboxGroup,
+  Stepper,
+  Slider,
+  Uploader,
+  Search,
+  Sticky,
+  Swipe,
+  SwipeItem,
+  ActionSheet,
+  Picker,
+  DatePicker,
+  TimePicker,
+  Cascader,
+  NumberKeyboard,
+  PasswordInput,
+  Sidebar,
+  SidebarItem,
+  TreeSelect,
+  IndexBar,
+  IndexAnchor,
+  Badge,
+  Circle,
+  Progress,
+  Skeleton,
+  DropdownMenu,
+  DropdownItem,
+  NoticeBar,
+  Divider,
+  Rate,
+  Collapse,
+  CollapseItem,
+  Step,
+  Steps,
+  ImagePreview,
+  Lazyload,
+  Overlay
 } from 'vant'
 
 // 导入Vant样式
@@ -61,6 +104,49 @@ app.use(Image)
 app.use(Toast)
 app.use(Icon)
 app.use(Popup)
+app.use(Dialog)
+app.use(RadioGroup)
+app.use(Radio)
+app.use(Loading)
+app.use(Tag)
+app.use(Switch)
+app.use(Checkbox)
+app.use(CheckboxGroup)
+app.use(Stepper)
+app.use(Slider)
+app.use(Uploader)
+app.use(Search)
+app.use(Sticky)
+app.use(Swipe)
+app.use(SwipeItem)
+app.use(ActionSheet)
+app.use(Picker)
+app.use(DatePicker)
+app.use(TimePicker)
+app.use(Cascader)
+app.use(NumberKeyboard)
+app.use(PasswordInput)
+app.use(Sidebar)
+app.use(SidebarItem)
+app.use(TreeSelect)
+app.use(IndexBar)
+app.use(IndexAnchor)
+app.use(Badge)
+app.use(Circle)
+app.use(Progress)
+app.use(Skeleton)
+app.use(DropdownMenu)
+app.use(DropdownItem)
+app.use(NoticeBar)
+app.use(Divider)
+app.use(Rate)
+app.use(Collapse)
+app.use(CollapseItem)
+app.use(Step)
+app.use(Steps)
+app.use(ImagePreview)
+app.use(Lazyload)
+app.use(Overlay)
 
 // 使用路由和状态管理
 app.use(router)

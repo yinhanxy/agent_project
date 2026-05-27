@@ -65,7 +65,7 @@ const userBio = computed(() => userStore.getUserBio || t('profile.bio'));
 
 // 跳转到登录页
 const goToLogin = () => {
-  router.push('/login');
+  router.push('/login?redirect=/my');
 };
 
 // 跳转到注册页
