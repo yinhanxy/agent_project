@@ -113,3 +113,9 @@ def test_unsupported_operator_raises():
     """$gt 等未实现的操作符要报错"""
     with pytest.raises(ValueError, match="不支持的操作符"):
         dict_to_milvus_expr({"chunk_index": {"$gt": 5}})
+
+
+def test_none_value_raises():
+    """字段值为 None 时应 ValueError，避免生成无效的 'field == None'"""
+    with pytest.raises(ValueError, match="不支持 None"):
+        dict_to_milvus_expr({"user_id": None})

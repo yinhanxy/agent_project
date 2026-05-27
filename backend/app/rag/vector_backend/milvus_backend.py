@@ -2,7 +2,7 @@
 
 依赖 langchain-milvus 提供的 Milvus 向量库封装。
 filter 通过 milvus_filter.dict_to_milvus_expr 转译。
-删除：用 pymilvus 原生 col.delete(expr=...)，因为 langchain-milvus 的 delete 仅支持 ids。
+删除：走 langchain-milvus 的 Milvus.delete(expr=...)，比 pymilvus ORM col.delete 更稳定。
 """
 import asyncio
 
@@ -58,7 +58,7 @@ class MilvusBackend(VectorStoreBackend):
         )
 
     async def delete_by_filter(self, filter_meta: dict) -> None:
-        """走 pymilvus col.delete(expr=...)。
+        """走 langchain-milvus 的 Milvus.delete(expr=...)。
 
         契约：filter_meta 不能为空（与 base.py Protocol 一致），
         否则 dict_to_milvus_expr 返回空字符串，会被这里拒绝。
@@ -73,13 +73,7 @@ class MilvusBackend(VectorStoreBackend):
                 f"filter_meta={filter_meta!r} 转译后表达式为空，拒绝执行删除"
             )
 
-        def _do_delete() -> None:
-            col = self._store.col  # pymilvus Collection
-            if col is None:
-                logger.warning("[MilvusBackend] 集合尚未创建，跳过删除")
-                return
-            col.delete(expr=expr)
-            col.flush()
-
-        await asyncio.to_thread(_do_delete)
+        # langchain-milvus 0.3.x 的 Milvus.delete(expr=...) 内部走 MilvusClient.delete，
+        # 比绕道 self._store.col (pymilvus 旧 ORM) 更稳定，且无需手动 flush。
+        await asyncio.to_thread(self._store.delete, expr=expr)
         logger.info(f"[MilvusBackend] 已删除 expr={expr}")

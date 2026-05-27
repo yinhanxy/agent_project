@@ -43,6 +43,16 @@ cd backend
 
 正常 `uvicorn main:app` 即可。首次启动会自动建 `child_chunks` 表与 Milvus 集合。
 
+## ⚠️ 升级注意（重要）
+
+本次重构把 BM25 索引数据源从向量库迁移到了 MySQL 新表 `child_chunks`。**无论是否切换到 Milvus**，从此版本之前升级的部署都需要注意：
+
+- 旧文档在 Chroma（或将来 Milvus）里有向量数据，但 `child_chunks` 表是空的
+- 这会导致 BM25 检索完全失效，系统**静默降级**为纯向量检索（不会报错，但召回质量下降）
+- **解决方案**：升级后让用户重新上传所有文档（首次重新写入会同时建立向量与 `child_chunks` 镜像）
+
+如果不想清空重传，可以写一次性回填脚本：从 ChromaDB 的 `vector_store.get(include=["documents","metadatas"])` 拉所有子块，调 `child_chunk_service.save_batch(...)` 镜像到 MySQL。本仓库未提供，需要自行实现。
+
 ## 数据迁移
 
 **当前策略：清空重传**。Chroma 中原有数据不会自动搬迁，旧用户的知识库需重新上传。

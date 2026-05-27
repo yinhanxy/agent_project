@@ -16,6 +16,11 @@ from typing import Optional, Any
 
 def _format_value(value: Any) -> str:
     """格式化标量值，字符串加引号并转义双引号。"""
+    if value is None:
+        raise ValueError(
+            "filter 值不支持 None（Milvus 无 IS NULL 等价表达），"
+            "请在上层过滤掉 None 条件"
+        )
     if isinstance(value, str):
         escaped = value.replace('\\', '\\\\').replace('"', '\\"')
         return f'"{escaped}"'
