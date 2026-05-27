@@ -44,5 +44,8 @@ class ChromaBackend(VectorStoreBackend):
 
     async def delete_by_filter(self, filter_meta: dict) -> None:
         if not filter_meta:
-            return
+            raise ValueError(
+                "delete_by_filter 不接受空 filter_meta，"
+                "若传空 Chroma 会删除集合内全部数据"
+            )
         await asyncio.to_thread(self._store.delete, where=filter_meta)

@@ -34,5 +34,8 @@ class VectorStoreBackend(Protocol):
         支持 Chroma 风格 dict（含 $or / $and / $eq / $in 等），
         如 {"file_id": "xxx"} 或 {"user_id": "yyy"} 或
         {"$or": [{"user_id": "u1"}, {"kb_id": {"$in": ["a","b"]}}]}。
+
+        契约：filter_meta 不能为空或 None，实现应 raise ValueError，
+        避免误删整张集合（Chroma where={} 会全删，是危险行为）。
         """
         ...
