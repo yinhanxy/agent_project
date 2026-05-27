@@ -95,3 +95,21 @@ def test_string_value_with_quotes_escaped():
     """字符串值里包含双引号要转义"""
     expr = dict_to_milvus_expr({"filename": 'he said "hi"'})
     assert expr == r'filename == "he said \"hi\""'
+
+
+def test_empty_condition_dict_raises():
+    """{"field": {}} 触发 ValueError，不允许静默崩溃"""
+    with pytest.raises(ValueError, match="不能为空"):
+        dict_to_milvus_expr({"field": {}})
+
+
+def test_empty_in_list_raises():
+    """$in [] 触发 ValueError，Milvus 不接受"""
+    with pytest.raises(ValueError, match="空列表"):
+        dict_to_milvus_expr({"kb_id": {"$in": []}})
+
+
+def test_unsupported_operator_raises():
+    """$gt 等未实现的操作符要报错"""
+    with pytest.raises(ValueError, match="不支持的操作符"):
+        dict_to_milvus_expr({"chunk_index": {"$gt": 5}})

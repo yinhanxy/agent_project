@@ -5,6 +5,11 @@
 - $eq / $ne / $in / $nin
 - $or / $and（顶层或任意嵌套位置）
 - 同层多字段隐式 AND
+
+限制：
+- $in / $nin 不接受空列表（Milvus 不支持）
+- 操作符 dict 不能为空
+- 不支持 None 值（Milvus 无 IS NULL 等价表达）
 """
 from typing import Optional, Any
 
@@ -20,12 +25,16 @@ def _format_value(value: Any) -> str:
 
 
 def _format_list(values: list) -> str:
+    if not values:
+        raise ValueError("$in / $nin 不接受空列表，Milvus 无法解析 `field in []`")
     return "[" + ", ".join(_format_value(v) for v in values) + "]"
 
 
 def _convert_field(field: str, condition: Any) -> str:
     """单个字段的条件转换。"""
     if isinstance(condition, dict):
+        if not condition:
+            raise ValueError(f"字段 {field!r} 的条件 dict 不能为空")
         # 操作符形式
         parts: list[str] = []
         for op, operand in condition.items():
@@ -62,4 +71,5 @@ def dict_to_milvus_expr(filter_meta: Optional[dict]) -> str:
 
     if len(clauses) == 1:
         return clauses[0]
-    return " and ".join(f"({c})" if " " in c else c for c in clauses)
+    # 多字段一律加括号，避免依赖"子句含空格"的脆弱启发式
+    return " and ".join(f"({c})" for c in clauses)
