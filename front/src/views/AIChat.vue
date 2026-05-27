@@ -320,34 +320,24 @@ watch(messages, () => {
   });
 }, { deep: true });
 
-// 监听路由参数变化，重新加载会话历史
-watch(() => route.params.sessionId, async (newSessionId) => {
-  if (newSessionId) {
-    // 立即设置 sessionId，避免用户在异步加载完成前发消息时创建新会话
-    sessionId.value = newSessionId;
-    try {
-      const result = await sessionStore.getSession(newSessionId);
-      if (result.success && sessionStore.currentSession) {
-        loadSessionHistory(sessionStore.currentSession);
-      } else {
-        showToast('加载会话历史失败');
-      }
-    } catch (error) {
-      console.error('加载会话历史失败:', error);
-      showToast('加载会话历史失败');
-    }
-  }
-}, { immediate: true });
+// 重置为空白新会话状态（点击「新对话」或路由无 sessionId 时调用）
+const resetChatState = () => {
+  messages.value = [
+    { role: 'assistant', content: '你好！我是AI助手，有什么可以帮助你的吗？', citations: [], showCitations: false, usedRag: false }
+  ];
+  sessionId.value = '';
+  sessionStore.setCurrentSession(null);
+};
 
-// 组件挂载时检查是否有当前会话或路由参数中的会话ID
-onMounted(async () => {
-  // 检查路由参数中是否有sessionId
-  const routeSessionId = route.params.sessionId;
-  
-  if (routeSessionId) {
-    // 从路由参数获取会话ID，加载会话历史
+// 根据当前路由同步聊天显示：有 sessionId 则加载历史，否则重置为空白会话
+const syncWithRoute = async () => {
+  const sessionIdParam = route.params.sessionId;
+  if (sessionIdParam) {
+    if (sessionId.value === sessionIdParam) return;
+    // 立即设置 sessionId，避免用户在异步加载完成前发消息时创建新会话
+    sessionId.value = sessionIdParam;
     try {
-      const result = await sessionStore.getSession(routeSessionId);
+      const result = await sessionStore.getSession(sessionIdParam);
       if (result.success && sessionStore.currentSession) {
         loadSessionHistory(sessionStore.currentSession);
       } else {
@@ -357,27 +347,34 @@ onMounted(async () => {
       console.error('加载会话历史失败:', error);
       showToast('加载会话历史失败');
     }
-  } else if (sessionStore.currentSession) {
-    // 从store中加载会话历史
-    loadSessionHistory(sessionStore.currentSession);
+  } else {
+    resetChatState();
   }
-  
+};
+
+// /aichat 关闭了 keep-alive，每次进入页面组件都会重新挂载；
+// 但 vue-router 在同组件 /aichat ↔ /aichat/:id 切换时会复用实例，故仍需 watcher
+watch(() => route.fullPath, (newFullPath, oldFullPath) => {
+  if (newFullPath === oldFullPath) return;
+  if (!route.path.startsWith('/aichat')) return;
+  syncWithRoute();
+});
+
+onMounted(() => {
+  syncWithRoute();
   scrollToBottom();
 });
 
 // 加载会话历史
 const loadSessionHistory = (session) => {
+  messages.value = [];
   if (session.history && session.history.length > 0) {
-    // 清空当前消息
-    messages.value = [];
-    // 加载历史消息
     session.history.forEach(([userMsg, aiMsg]) => {
       messages.value.push({ role: 'user', content: userMsg });
       messages.value.push({ role: 'assistant', content: aiMsg, citations: [], showCitations: false, usedRag: false });
     });
-    // 设置会话ID
-    sessionId.value = session.session_id;
   }
+  sessionId.value = session.session_id;
 };
 </script>
 

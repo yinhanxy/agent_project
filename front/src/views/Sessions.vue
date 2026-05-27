@@ -162,8 +162,9 @@ const deleteSession = async (sessionId) => {
   }
 };
 
-// 开始新对话：直接跳转到聊天页，不需要先输入问题
+// 开始新对话：清空当前会话引用并跳转到空白聊天页
 const createNewSession = () => {
+  sessionStore.setCurrentSession(null);
   router.push('/aichat');
 };
 </script>
