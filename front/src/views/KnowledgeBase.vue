@@ -1,19 +1,35 @@
 <template>
   <div class="kb-container">
-    <van-nav-bar title="知识库" fixed />
+    <header class="kb-hero">
+      <div>
+        <span class="section-eyebrow">
+          <van-icon name="orders-o" size="13" />
+          文档检索中枢
+        </span>
+        <h1>知识库</h1>
+      </div>
+      <div class="kb-hero-stats">
+        <span>{{ documents.length }} 文档</span>
+        <span>{{ kbs.length }} 知识库</span>
+      </div>
+    </header>
 
     <div class="kb-content">
       <!-- 模式切换 -->
-      <van-tabs v-model:active="activeTab" sticky offset-top="46">
+      <van-tabs v-model:active="activeTab" sticky offset-top="0" class="kb-tabs">
 
         <!-- ── 个人文档 ── -->
         <van-tab title="个人文档" name="personal">
           <div class="tab-body">
             <!-- 上传区域 -->
             <div class="upload-area" @click="triggerFileInput" @dragover.prevent @drop.prevent="handleDrop">
-              <van-icon name="plus" size="36" color="#1989fa" />
-              <p class="upload-title">点击或拖拽上传文件</p>
-              <p class="upload-hint">支持 PDF、TXT、MD、DOCX、PPTX，单文件最大 20MB</p>
+              <div class="upload-icon">
+                <van-icon name="plus" size="28" />
+              </div>
+              <div class="upload-copy">
+                <p class="upload-title">上传知识文件</p>
+                <p class="upload-hint">支持 PDF、TXT、MD、DOCX、PPTX，单文件最大 20MB</p>
+              </div>
               <input
                 ref="fileInputRef"
                 type="file"
@@ -27,12 +43,12 @@
             <!-- 待上传 -->
             <div v-if="pendingFiles.length > 0" class="list-section">
               <div class="section-header">
-                <span class="section-title">待上传 ({{ pendingFiles.length }})</span>
-                <van-button size="small" type="primary" :loading="uploading" @click="uploadAll">
+                <span class="section-title">待上传 <em>{{ pendingFiles.length }}</em></span>
+                <van-button class="soft-button primary" size="small" type="primary" :loading="uploading" @click="uploadAll">
                   {{ uploading ? '上传中...' : '全部上传' }}
                 </van-button>
               </div>
-              <van-cell-group inset>
+              <van-cell-group inset class="modern-cell-group">
                 <van-cell
                   v-for="(file, index) in pendingFiles"
                   :key="index"
@@ -51,9 +67,9 @@
             <div v-if="uploadResults.length > 0" class="list-section">
               <div class="section-header">
                 <span class="section-title">上传结果</span>
-                <van-button size="small" plain @click="uploadResults = []">清除</van-button>
+                <van-button class="soft-button" size="small" plain @click="uploadResults = []">清除</van-button>
               </div>
-              <van-cell-group inset>
+              <van-cell-group inset class="modern-cell-group">
                 <van-cell
                   v-for="(result, index) in uploadResults"
                   :key="index"
@@ -70,13 +86,13 @@
               <div class="section-header">
                 <span class="section-title">
                   已上传文档
-                  <van-tag v-if="!loadingDocs" plain type="primary" style="margin-left:6px">{{ documents.length }}</van-tag>
+                  <van-tag v-if="!loadingDocs" plain type="primary" class="count-tag">{{ documents.length }}</van-tag>
                 </span>
-                <van-button size="small" plain icon="replay" @click="loadDocuments" :loading="loadingDocs" />
+                <van-button class="icon-button" size="small" plain icon="replay" @click="loadDocuments" :loading="loadingDocs" />
               </div>
               <van-loading v-if="loadingDocs" size="24px" vertical style="padding:24px 0">加载中</van-loading>
               <van-empty v-else-if="documents.length === 0" description="知识库为空，请上传文档" image-size="80" />
-              <van-cell-group v-else inset>
+              <van-cell-group v-else inset class="modern-cell-group">
                 <van-cell
                   v-for="doc in documents"
                   :key="doc.doc_id"
@@ -94,7 +110,7 @@
 
             <!-- 危险操作 -->
             <div class="list-section">
-              <van-cell-group inset>
+              <van-cell-group inset class="modern-cell-group danger-group">
                 <van-cell title="清空我的知识库" label="删除所有已上传的文档"
                   icon="delete-o" icon-color="#ee0a24" is-link @click="confirmClean" />
               </van-cell-group>
@@ -107,10 +123,10 @@
           <div class="tab-body">
             <!-- 创建 KB（管理员显示全部选项，普通用户仅个人） -->
             <div class="list-section">
-              <van-button block type="primary" icon="plus" @click="showCreateKb = true">
+              <van-button class="create-kb-button" block type="primary" icon="plus" @click="showCreateKb = true">
                 创建知识库
               </van-button>
-              <p style="font-size:12px;color:#999;margin:6px 4px 0">
+              <p class="section-note">
                 {{ isAdmin ? '管理员：可创建个人/公开/部门/管理员专属知识库' : '可创建个人（私有）或公开知识库' }}
               </p>
             </div>
@@ -119,14 +135,14 @@
             <div class="list-section">
               <div class="section-header">
                 <span class="section-title">可访问的知识库</span>
-                <van-button size="small" plain icon="replay" @click="loadKbs" :loading="loadingKbs" />
+                <van-button class="icon-button" size="small" plain icon="replay" @click="loadKbs" :loading="loadingKbs" />
               </div>
               <van-loading v-if="loadingKbs" size="24px" vertical style="padding:24px 0">加载中</van-loading>
               <van-empty v-else-if="kbs.length === 0" description="暂无知识库" image-size="80" />
               <template v-else>
                 <div v-for="group in kbGroups" :key="group.scope" class="kb-group">
                   <div class="kb-group-title">{{ group.label }}</div>
-                  <van-cell-group inset>
+                  <van-cell-group inset class="modern-cell-group kb-card-group">
                     <van-cell
                       v-for="kb in group.items"
                       :key="kb.kb_id"
@@ -648,51 +664,317 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.kb-container { min-height: 100vh; background: #f7f8fa; }
-.kb-content { padding-top: 46px; padding-bottom: 60px; }
-.tab-body { display: flex; flex-direction: column; gap: 12px; padding: 12px 0; }
-.list-section { padding: 0 16px; }
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 4px;
+.kb-container {
+  --page-bg: #f5f7f8;
+  --surface: #ffffff;
+  --ink: #16202a;
+  --muted: #6b7684;
+  --line: #dfe7ed;
+  --primary: #1d6fe8;
+  --teal: #178c83;
+  --amber: #b9851d;
+
+  min-height: 100dvh;
+  padding-bottom: calc(58px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, #f8faf9 0%, var(--page-bg) 46%, #eef3f5 100%);
+  color: var(--ink);
 }
-.section-title { font-size: 14px; font-weight: 500; color: #323233; }
-.upload-area {
-  margin: 0 16px;
-  border: 2px dashed #1989fa;
-  border-radius: 12px;
-  background: #f0f7ff;
-  padding: 32px 16px;
+
+.kb-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid rgba(199, 213, 223, 0.72);
+  background: rgba(248, 250, 249, 0.94);
+  box-shadow: 0 10px 28px rgba(35, 56, 74, 0.06);
+  backdrop-filter: blur(16px);
+}
+
+.section-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.kb-hero h1 {
+  margin: 4px 0 0;
+  font-size: 25px;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.kb-hero-stats {
   display: flex;
   flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+  align-items: flex-end;
+}
+
+.kb-hero-stats span {
+  padding: 5px 8px;
+  border: 1px solid rgba(102, 127, 150, 0.16);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #536678;
+  font-size: 11px;
+  font-weight: 750;
+  box-shadow: 0 6px 14px rgba(46, 74, 96, 0.06);
+}
+
+.kb-content {
+  padding-bottom: 8px;
+}
+
+.kb-tabs :deep(.van-tabs__wrap) {
+  border-bottom: 1px solid rgba(199, 213, 223, 0.65);
+  background: rgba(248, 250, 249, 0.96);
+}
+
+.kb-tabs :deep(.van-tab) {
+  color: #6b7684;
+  font-weight: 700;
+}
+
+.kb-tabs :deep(.van-tab--active) {
+  color: var(--primary);
+}
+
+.kb-tabs :deep(.van-tabs__line) {
+  background: var(--primary);
+}
+
+.tab-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 0;
+}
+
+.list-section {
+  padding: 0 14px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 2px;
+}
+
+.section-title {
+  color: #22313d;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.section-title em {
+  margin-left: 4px;
+  color: var(--primary);
+  font-style: normal;
+}
+
+.count-tag {
+  margin-left: 6px;
+  border-radius: 999px;
+}
+
+.upload-area {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin: 0 14px;
+  padding: 18px 16px;
+  border: 1px dashed rgba(29, 111, 232, 0.34);
+  border-radius: 8px;
+  background: linear-gradient(135deg, #ffffff 0%, #eef7f6 100%);
+  box-shadow: 0 10px 24px rgba(39, 73, 94, 0.07);
+  cursor: pointer;
+  transition: transform 0.16s ease, border-color 0.16s ease;
+}
+
+.upload-area:active {
+  border-color: rgba(29, 111, 232, 0.56);
+  transform: translateY(1px);
+}
+
+.upload-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background: #e7f5f2;
+  color: var(--teal);
+}
+
+.upload-copy {
+  min-width: 0;
+}
+
+.upload-title {
+  margin: 0;
+  color: #1c2a35;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.upload-hint {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.modern-cell-group {
+  overflow: hidden;
+  border: 1px solid rgba(199, 213, 223, 0.72);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(39, 73, 94, 0.06);
+}
+
+.modern-cell-group :deep(.van-cell) {
+  padding: 13px 14px;
+}
+
+.modern-cell-group :deep(.van-cell__title) {
+  min-width: 0;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.modern-cell-group :deep(.van-cell__label) {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.danger-group :deep(.van-cell__title) {
+  color: #d74d42;
+}
+
+.soft-button,
+.icon-button {
+  border-radius: 8px;
+}
+
+.create-kb-button {
+  height: 42px;
+  border: 0;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--primary), #0f4fbf);
+  box-shadow: 0 10px 18px rgba(29, 111, 232, 0.18);
+}
+
+.section-note {
+  margin: 7px 2px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.kb-card-group :deep(.van-cell) {
+  align-items: center;
+}
+
+.kb-group {
+  margin-bottom: 10px;
+}
+
+.kb-group-title {
+  padding: 8px 18px 5px;
+  color: var(--amber);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+/* KB detail popup */
+.kb-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  overflow-y: auto;
+  padding: 18px 16px;
+  background: #f5f7f8;
+}
+
+.kb-detail-header {
+  display: flex;
   align-items: center;
   gap: 8px;
-  cursor: pointer;
-  transition: background 0.2s;
 }
-.upload-area:active { background: #daeeff; }
-.upload-title { font-size: 15px; color: #1989fa; font-weight: 500; }
-.upload-hint { font-size: 12px; color: #999; text-align: center; }
 
-/* KB 详情弹窗 */
-.kb-detail { padding: 16px; height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
-.kb-detail-header { display: flex; align-items: center; gap: 8px; }
-.kb-detail-title { font-size: 18px; font-weight: 600; color: #323233; }
-.kb-detail-desc { font-size: 13px; color: #666; margin: 0; }
-.kb-query-area { }
-.kb-result { background: #f7f8fa; border-radius: 8px; padding: 12px; }
-.kb-result-summary { font-size: 14px; color: #323233; line-height: 1.6; white-space: pre-wrap; }
-.citations { margin-top: 12px; }
-.citations-title { font-size: 13px; font-weight: 500; color: #666; margin-bottom: 8px; padding-left: 4px; }
-.kb-group { margin-bottom: 8px; }
-.kb-group-title {
+.kb-detail-title {
+  min-width: 0;
+  color: #1c2a35;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.kb-detail-desc {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.kb-query-area {
+  overflow: hidden;
+  border: 1px solid rgba(199, 213, 223, 0.72);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.kb-result {
+  padding: 13px;
+  border: 1px solid rgba(199, 213, 223, 0.72);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(39, 73, 94, 0.06);
+}
+
+.kb-result-summary {
+  color: #263542;
+  font-size: 14px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.citations {
+  margin-top: 12px;
+}
+
+.citations-title {
+  margin-bottom: 8px;
+  padding-left: 2px;
+  color: var(--amber);
   font-size: 12px;
-  font-weight: 600;
-  color: #969799;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 8px 20px 4px;
+  font-weight: 800;
+}
+
+@media screen and (max-width: 380px) {
+  .kb-hero {
+    padding: 15px 13px 12px;
+  }
+
+  .kb-hero h1 {
+    font-size: 22px;
+  }
+
+  .list-section {
+    padding: 0 10px;
+  }
+
+  .upload-area {
+    margin: 0 10px;
+  }
 }
 </style>

@@ -58,12 +58,6 @@ html, body {
   max-width: 750px;
   margin: 0 auto;
   height: 100%;
-}
-
-/* 移动端适配 */
-@media screen and (max-width: 750px) {
-  html {
-    font-size: calc(100vw / 750 * 16);
-  }
+  background-color: #f5f7f8;
 }
 </style>

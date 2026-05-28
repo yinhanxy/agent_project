@@ -5,16 +5,30 @@
   font-weight: 400;
 
   /* 主题变量 */
-  --primary-color: #1989fa;
-  --text-color: #333;
-  --text-color-light: #666;
-  --text-color-lighter: #999;
-  --border-color: #ebedf0;
-  --background-color: #f7f8fa;
+  --primary-color: #1d6fe8;
+  --primary-color-deep: #0f4fbf;
+  --accent-teal: #178c83;
+  --accent-amber: #b9851d;
+  --text-color: #16202a;
+  --text-color-light: #536678;
+  --text-color-lighter: #7d8b98;
+  --border-color: #dfe7ed;
+  --background-color: #f5f7f8;
+  --surface-color: #ffffff;
   --white: #fff;
   --safe-area-inset-bottom: env(safe-area-inset-bottom);
+  --van-primary-color: var(--primary-color);
+  --van-success-color: var(--accent-teal);
+  --van-danger-color: #d74d42;
+  --van-text-color: var(--text-color);
+  --van-text-color-2: var(--text-color-light);
+  --van-border-color: var(--border-color);
+  --van-background: var(--background-color);
+  --van-background-2: var(--surface-color);
+  --van-radius-md: 8px;
+  --van-radius-lg: 8px;
 
-  color-scheme: light dark;
+  color-scheme: light;
   color: var(--text-color);
   background-color: var(--background-color);
 
@@ -31,6 +45,7 @@ html {
 }
 
 body {
+  margin: 0;
   font-size: 14px;
   color: var(--text-color);
   background-color: var(--background-color);
@@ -40,9 +55,44 @@ body {
   overflow-x: hidden;
 }
 
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* 适配iPhone底部安全区域 */
 .van-tabbar {
   padding-bottom: var(--safe-area-inset-bottom);
+}
+
+.app-tabbar.van-tabbar {
+  left: 50%;
+  width: min(100%, 750px);
+  height: calc(58px + var(--safe-area-inset-bottom));
+  transform: translateX(-50%);
+  border-top: 1px solid rgba(199, 213, 223, 0.82);
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 -10px 26px rgba(35, 56, 74, 0.08);
+  backdrop-filter: blur(16px);
+}
+
+.app-tabbar .van-tabbar-item {
+  color: #627181;
+  font-size: 12px;
+}
+
+.app-tabbar .van-tabbar-item--active {
+  color: var(--primary-color);
+  font-weight: 700;
+}
+
+.app-tabbar .van-tabbar-item__icon {
+  margin-bottom: 3px;
 }
 
 /* 滚动条优化 */

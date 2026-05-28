@@ -1,72 +1,127 @@
 <template>
-  <div class="ai-chat-container">
-    <van-nav-bar 
-      title="AI问答" 
-      fixed 
-      right-text="会话" 
-      @click-right="goToSessions"
-    />
-    
-    <div class="chat-content">
+  <div class="ai-chat-page">
+    <header class="chat-header">
+      <div class="header-top">
+        <div class="title-block">
+          <span class="eyebrow">
+            <van-icon name="cluster-o" size="13" />
+            智能知识库
+          </span>
+          <h1>知识问答</h1>
+        </div>
+        <button class="header-action" type="button" @click="goToSessions">
+          <van-icon name="clock-o" size="17" />
+          <span>会话</span>
+        </button>
+      </div>
+
+      <div class="status-row">
+        <span class="status-pill">
+          <span class="status-dot"></span>
+          RAG 已连接
+        </span>
+        <span class="status-copy">混合检索 · 来源可追踪</span>
+      </div>
+
+      <div class="knowledge-strip" aria-label="知识库快捷入口">
+        <button
+          v-for="source in knowledgeChips"
+          :key="source"
+          class="knowledge-chip"
+          type="button"
+          @click="goToKnowledge"
+        >
+          <van-icon name="description-o" size="13" />
+          {{ source }}
+        </button>
+      </div>
+    </header>
+
+    <main class="chat-content">
       <div class="messages-container" ref="messagesContainer">
+        <section class="insight-panel">
+          <div>
+            <span class="panel-kicker">今日工作台</span>
+            <h2>把文档变成可追问的答案</h2>
+          </div>
+          <div class="panel-metrics">
+            <span>向量检索</span>
+            <span>BM25</span>
+            <span>重排序</span>
+          </div>
+        </section>
+
         <div
           v-for="(message, index) in messages"
           :key="index"
-          :class="['message', message.role === 'user' ? 'user-message' : 'ai-message']"
+          :class="['message-row', message.role === 'user' ? 'user-message' : 'ai-message']"
         >
-          <div class="message-content">
-            <div v-if="message.role === 'assistant' && message.content === ''" class="typing-indicator">
-              <span></span>
-              <span></span>
-              <span></span>
+          <div v-if="message.role === 'assistant'" class="message-avatar">AI</div>
+          <div class="message-stack">
+            <div v-if="message.role === 'assistant'" class="message-meta">
+              <span>RAG Assistant</span>
+              <span v-if="message.usedRag" class="rag-badge">
+                <van-icon name="search" size="11" />
+                已检索
+              </span>
             </div>
-            <div v-else v-html="formatMessage(message.content)"></div>
-          </div>
-          <div v-if="message.role === 'assistant' && message.usedRag" class="rag-badge">
-            <van-icon name="search" size="11" />
-            已检索知识库
-          </div>
-          <div
-            v-if="message.role === 'assistant' && message.citations && message.citations.length"
-            class="citations-section"
-          >
-            <div class="citations-toggle" @click="message.showCitations = !message.showCitations">
-              <van-icon name="description-o" size="12" />
-              参考来源 ({{ message.citations.length }})
-              <van-icon :name="message.showCitations ? 'arrow-up' : 'arrow-down'" size="12" />
+
+            <div class="message-content">
+              <div v-if="message.role === 'assistant' && message.content === ''" class="typing-indicator">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+              <div v-else class="markdown-body" v-html="formatMessage(message.content)"></div>
             </div>
-            <div v-if="message.showCitations" class="citations-list">
-              <div v-for="(c, ci) in message.citations" :key="ci" class="citation-item">
-                <van-icon name="label-o" size="11" color="#aaa" />
-                <span class="citation-filename">{{ c.filename }}</span>
-                <span class="citation-score">{{ (c.score * 100).toFixed(0) }}%</span>
+
+            <div
+              v-if="message.role === 'assistant' && message.citations && message.citations.length"
+              class="citations-section"
+            >
+              <button class="citations-toggle" type="button" @click="message.showCitations = !message.showCitations">
+                <span>
+                  <van-icon name="description-o" size="12" />
+                  参考来源 {{ message.citations.length }}
+                </span>
+                <van-icon :name="message.showCitations ? 'arrow-up' : 'arrow-down'" size="12" />
+              </button>
+              <div v-if="message.showCitations" class="citations-list">
+                <div v-for="(c, ci) in message.citations" :key="ci" class="citation-item">
+                  <van-icon name="label-o" size="12" color="#6b7c8f" />
+                  <span class="citation-filename">{{ c.filename }}</span>
+                  <span class="citation-score">{{ (c.score * 100).toFixed(0) }}%</span>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-      
-      <div class="input-container">
-        <van-field
-          v-model="userInput"
-          rows="1"
-          autosize
-          type="textarea"
-          placeholder="请输入问题..."
-          class="chat-input"
-          @keypress.enter.prevent="sendMessage"
-        />
-        <van-button 
-          type="primary" 
-          class="send-button" 
-          :disabled="isLoading || !userInput.trim()" 
-          @click="sendMessage"
-        >
-          发送
-        </van-button>
-      </div>
-    </div>
-    
+    </main>
+
+    <footer class="composer-shell">
+      <button class="composer-tool" type="button" aria-label="打开知识库" @click="goToKnowledge">
+        <van-icon name="notes-o" size="20" />
+      </button>
+      <van-field
+        v-model="userInput"
+        rows="1"
+        autosize
+        type="textarea"
+        placeholder="向知识库提问..."
+        class="chat-input"
+        @keypress.enter.prevent="sendMessage"
+      />
+      <van-button
+        type="primary"
+        class="send-button"
+        :disabled="isLoading || !userInput.trim()"
+        @click="sendMessage"
+      >
+        <van-icon name="guide-o" size="17" />
+      </van-button>
+    </footer>
+
     <tab-bar />
   </div>
 </template>
@@ -99,6 +154,7 @@ const getCsrfToken = () => {
 const messages = ref([
   { role: 'assistant', content: '你好！我是AI助手，有什么可以帮助你的吗？', citations: [], showCitations: false, usedRag: false }
 ]);
+const knowledgeChips = ['FastAPI 文档', 'LangChain 笔记', '课程资料'];
 const userInput = ref('');
 const messagesContainer = ref(null);
 const isLoading = ref(false);
@@ -306,6 +362,11 @@ const goToSessions = () => {
   router.push('/sessions');
 };
 
+// 跳转到知识库页面
+const goToKnowledge = () => {
+  router.push('/knowledge');
+};
+
 // 滚动到底部
 const scrollToBottom = () => {
   if (messagesContainer.value) {
@@ -379,278 +440,338 @@ const loadSessionHistory = (session) => {
 </script>
 
 <style scoped>
-.ai-chat-container {
+.ai-chat-page {
+  --page-bg: #f5f7f8;
+  --surface: #ffffff;
+  --surface-soft: #eef5f5;
+  --ink: #16202a;
+  --muted: #6b7684;
+  --line: #dfe7ed;
+  --primary: #1d6fe8;
+  --primary-deep: #0f4fbf;
+  --teal: #178c83;
+  --amber: #b9851d;
+
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  padding-top: 46px;
-  padding-bottom: 50px;
-  box-sizing: border-box;
+  height: 100dvh;
+  min-height: 100vh;
+  padding-bottom: calc(58px + env(safe-area-inset-bottom));
+  background:
+    linear-gradient(180deg, #f8faf9 0%, var(--page-bg) 42%, #eef3f5 100%);
+  color: var(--ink);
+  overflow: hidden;
+}
+
+.chat-header {
+  flex-shrink: 0;
+  padding: 18px 18px 12px;
+  background: rgba(248, 250, 249, 0.94);
+  border-bottom: 1px solid rgba(199, 213, 223, 0.72);
+  box-shadow: 0 10px 28px rgba(35, 56, 74, 0.06);
+  backdrop-filter: blur(16px);
+}
+
+.header-top,
+.status-row,
+.knowledge-strip,
+.message-row,
+.message-meta,
+.panel-metrics,
+.composer-shell,
+.citation-item,
+.citations-toggle {
+  display: flex;
+  align-items: center;
+}
+
+.header-top {
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.title-block {
+  min-width: 0;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.title-block h1 {
+  margin: 4px 0 0;
+  font-size: 25px;
+  line-height: 1.15;
+  letter-spacing: 0;
+  color: var(--ink);
+}
+
+.header-action,
+.knowledge-chip,
+.composer-tool,
+.citations-toggle {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.header-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(29, 111, 232, 0.16);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 650;
+  box-shadow: 0 6px 16px rgba(25, 72, 122, 0.08);
+}
+
+.status-row {
+  gap: 8px;
+  margin-top: 12px;
+  min-width: 0;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 5px 8px;
+  border: 1px solid rgba(23, 140, 131, 0.2);
+  border-radius: 999px;
+  background: #e7f5f2;
+  color: #0e6d66;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #18b394;
+  box-shadow: 0 0 0 3px rgba(24, 179, 148, 0.16);
+}
+
+.status-copy {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.knowledge-strip {
+  gap: 8px;
+  margin-top: 12px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.knowledge-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.knowledge-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  min-height: 30px;
+  max-width: 142px;
+  padding: 0 10px;
+  border: 1px solid rgba(102, 127, 150, 0.16);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #355066;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(46, 74, 96, 0.05);
 }
 
 .chat-content {
   flex: 1;
-  display: flex;
-  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }
 
 .messages-container {
-  flex: 1;
+  height: 100%;
   overflow-y: auto;
-  padding: 10px;
+  padding: 14px 14px 12px;
 }
 
-.message {
-  margin-bottom: 10px;
-  max-width: 80%;
+.insight-panel {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 13px 14px;
+  border: 1px solid rgba(31, 79, 117, 0.09);
+  border-radius: 8px;
+  background: linear-gradient(135deg, #ffffff 0%, #eef7f6 100%);
+  box-shadow: 0 10px 24px rgba(39, 73, 94, 0.07);
+}
+
+.panel-kicker {
+  color: var(--amber);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.insight-panel h2 {
+  margin: 3px 0 0;
+  color: #1c2a35;
+  font-size: 15px;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.panel-metrics {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+  min-width: 118px;
+}
+
+.panel-metrics span {
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #536678;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.message-row {
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.message-avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: #123451;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  box-shadow: 0 8px 16px rgba(18, 52, 81, 0.16);
+}
+
+.message-stack {
+  max-width: min(88%, 560px);
+  min-width: 0;
 }
 
 .user-message {
-  margin-left: auto;
+  justify-content: flex-end;
 }
 
-.ai-message {
-  margin-right: auto;
+.user-message .message-stack {
+  max-width: min(80%, 520px);
+}
+
+.message-meta {
+  gap: 6px;
+  margin: 0 0 5px 1px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
 }
 
 .message-content {
-  padding: 10px;
-  border-radius: 10px;
+  overflow: hidden;
+  padding: 12px 13px;
+  border-radius: 8px;
   word-break: break-word;
 }
 
-.user-message .message-content {
-  background-color: #007aff;
-  color: white;
-}
-
 .ai-message .message-content {
-  background-color: #f2f2f2;
-  color: #333;
+  border: 1px solid rgba(199, 213, 223, 0.76);
+  background: rgba(255, 255, 255, 0.94);
+  color: #263542;
+  box-shadow: 0 10px 24px rgba(39, 73, 94, 0.08);
 }
 
-.input-container {
-  display: flex;
-  padding: 10px;
-  border-top: 1px solid #eee;
-  background-color: #fff;
+.user-message .message-content {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-deep) 100%);
+  color: #ffffff;
+  box-shadow: 0 10px 20px rgba(29, 111, 232, 0.18);
 }
 
-.chat-input {
-  flex: 1;
-  margin-right: 10px;
-}
-
-.send-button {
-  align-self: flex-end;
-}
-
-/* Markdown 样式 */
-.message-content pre {
-  background-color: #f8f8f8;
-  padding: 10px;
-  border-radius: 5px;
-  overflow-x: auto;
-}
-
-.message-content code {
-  background-color: rgba(0, 0, 0, 0.05);
-  padding: 2px 4px;
-  border-radius: 3px;
-}
-
-.message-content img {
-  max-width: 100%;
-}
-
-/* 打字指示器 */
-.typing-indicator {
-  display: flex;
-  padding: 5px;
-}
-
-.typing-indicator span {
-  height: 8px;
-  width: 8px;
-  background-color: #999;
-  border-radius: 50%;
-  margin: 0 2px;
-  display: inline-block;
-  animation: bounce 1.5s infinite ease-in-out;
-}
-
-.typing-indicator span:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.typing-indicator span:nth-child(3) {
-  animation-delay: 0.4s;
-}
-
-@keyframes bounce {
-  0%, 60%, 100% {
-    transform: translateY(0);
-  }
-  30% {
-    transform: translateY(-5px);
-  }
-}
-
-/* Markdown样式 */
-:deep(pre) {
-  background-color: #1e1e1e;
-  padding: 15px;
-  border-radius: 6px;
-  overflow-x: auto;
-  margin: 10px 0;
-  color: #d4d4d4;
-}
-
-:deep(pre code) {
-  background-color: transparent;
-  padding: 0;
-  border-radius: 0;
-  color: #d4d4d4;
-}
-
-:deep(code) {
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  background-color: rgba(0, 0, 0, 0.05);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 0.9em;
-}
-
-:deep(p) {
-  margin: 8px 0;
-  line-height: 1.5;
-}
-
-:deep(ul), :deep(ol) {
-  padding-left: 20px;
-  margin: 8px 0;
-}
-
-:deep(li) {
-  margin: 4px 0;
-  line-height: 1.5;
-}
-
-:deep(a) {
-  color: #1989fa;
-  text-decoration: none;
-}
-
-:deep(a:hover) {
-  text-decoration: underline;
-}
-
-:deep(h1), :deep(h2), :deep(h3), :deep(h4), :deep(h5), :deep(h6) {
-  margin: 12px 0 8px 0;
-  font-weight: bold;
-}
-
-:deep(h1) {
-  font-size: 1.5em;
-}
-
-:deep(h2) {
-  font-size: 1.3em;
-}
-
-:deep(h3) {
-  font-size: 1.1em;
-}
-
-:deep(blockquote) {
-  border-left: 4px solid #1989fa;
-  padding-left: 10px;
-  margin: 10px 0;
-  color: #666;
-  background-color: #f9f9f9;
-  padding: 8px 12px;
-  border-radius: 0 4px 4px 0;
-}
-
-:deep(hr) {
-  border: 0;
-  border-top: 1px solid #eee;
-  margin: 16px 0;
-}
-
-:deep(img) {
-  max-width: 100%;
-  border-radius: 4px;
-  margin: 8px 0;
-}
-
-:deep(table) {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 10px 0;
-}
-
-:deep(th), :deep(td) {
-  border: 1px solid #ddd;
-  padding: 8px;
-  text-align: left;
-}
-
-:deep(th) {
-  background-color: #f2f2f2;
-  font-weight: bold;
-}
-
-/* 已检索知识库徽标 */
 .rag-badge {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  margin-top: 5px;
-  padding: 2px 7px;
-  background: #eef6ff;
-  color: #1989fa;
-  border-radius: 10px;
-  font-size: 11px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #e7f5f2;
+  color: #0e6d66;
+  font-size: 10px;
+  font-weight: 750;
 }
 
-/* 参考来源 */
 .citations-section {
-  margin-top: 6px;
-  padding-top: 5px;
-  border-top: 1px solid rgba(0, 0, 0, 0.07);
+  margin-top: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(199, 213, 223, 0.75);
+  border-radius: 8px;
+  background: rgba(250, 252, 252, 0.92);
 }
 
 .citations-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: #969799;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  background: transparent;
+  color: #607083;
   font-size: 11px;
-  cursor: pointer;
-  user-select: none;
-  padding: 2px 0;
+  font-weight: 750;
 }
 
-.citations-toggle:hover {
-  color: #646566;
+.citations-toggle span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .citations-list {
-  margin-top: 4px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 5px;
+  padding: 0 10px 9px;
 }
 
 .citation-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 7px;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #526476;
   font-size: 11px;
-  color: #646566;
-  padding: 1px 0;
 }
 
 .citation-filename {
@@ -662,7 +783,256 @@ const loadSessionHistory = (session) => {
 
 .citation-score {
   flex-shrink: 0;
-  color: #1989fa;
-  font-weight: 500;
+  color: var(--amber);
+  font-weight: 800;
+}
+
+.composer-shell {
+  flex-shrink: 0;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid rgba(199, 213, 223, 0.72);
+  background: rgba(248, 250, 249, 0.96);
+  box-shadow: 0 -10px 28px rgba(35, 56, 74, 0.06);
+  backdrop-filter: blur(16px);
+}
+
+.composer-tool {
+  display: grid;
+  place-items: center;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(102, 127, 150, 0.18);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #38556e;
+}
+
+.chat-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid rgba(102, 127, 150, 0.16);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.chat-input :deep(.van-field__control) {
+  max-height: 104px;
+  min-height: 22px;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.chat-input :deep(.van-field__control::placeholder) {
+  color: #9aa8b4;
+  opacity: 1;
+}
+
+.chat-input :deep(.van-field__body) {
+  align-items: center;
+}
+
+.chat-input :deep(.van-cell) {
+  padding: 8px 10px;
+}
+
+.send-button {
+  flex: 0 0 42px;
+  width: 42px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-deep) 100%);
+  box-shadow: 0 10px 18px rgba(29, 111, 232, 0.2);
+}
+
+.send-button.van-button--disabled {
+  background: #c8d4df;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.typing-indicator {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  min-height: 22px;
+}
+
+.typing-indicator span {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #8ca0b2;
+  animation: bounce 1.35s infinite ease-in-out;
+}
+
+.typing-indicator span:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.typing-indicator span:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes bounce {
+  0%, 70%, 100% {
+    opacity: 0.45;
+    transform: translateY(0);
+  }
+  35% {
+    opacity: 1;
+    transform: translateY(-5px);
+  }
+}
+
+.markdown-body :deep(p) {
+  margin: 0 0 8px;
+  line-height: 1.68;
+}
+
+.markdown-body :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown-body :deep(pre) {
+  margin: 10px 0;
+  padding: 12px;
+  overflow-x: auto;
+  border-radius: 8px;
+  background-color: #16202a;
+  color: #dce7ef;
+}
+
+.markdown-body :deep(pre code) {
+  padding: 0;
+  background-color: transparent;
+  color: inherit;
+}
+
+.markdown-body :deep(code) {
+  padding: 2px 5px;
+  border-radius: 5px;
+  background-color: rgba(22, 32, 42, 0.08);
+  color: #1c4768;
+  font-family: Consolas, Monaco, 'Courier New', monospace;
+  font-size: 0.9em;
+}
+
+.user-message .markdown-body :deep(code) {
+  background-color: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+.markdown-body :deep(ul),
+.markdown-body :deep(ol) {
+  margin: 8px 0;
+  padding-left: 18px;
+}
+
+.markdown-body :deep(li) {
+  margin: 4px 0;
+  line-height: 1.55;
+}
+
+.markdown-body :deep(a) {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.markdown-body :deep(h1),
+.markdown-body :deep(h2),
+.markdown-body :deep(h3),
+.markdown-body :deep(h4),
+.markdown-body :deep(h5),
+.markdown-body :deep(h6) {
+  margin: 12px 0 8px;
+  color: #1c2a35;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.markdown-body :deep(h1) {
+  font-size: 1.34em;
+}
+
+.markdown-body :deep(h2) {
+  font-size: 1.2em;
+}
+
+.markdown-body :deep(h3) {
+  font-size: 1.08em;
+}
+
+.markdown-body :deep(blockquote) {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--teal);
+  border-radius: 0 6px 6px 0;
+  background-color: #eef7f6;
+  color: #536678;
+}
+
+.markdown-body :deep(hr) {
+  margin: 14px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.markdown-body :deep(img) {
+  max-width: 100%;
+  margin: 8px 0;
+  border-radius: 6px;
+}
+
+.markdown-body :deep(table) {
+  width: 100%;
+  margin: 10px 0;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.markdown-body :deep(th),
+.markdown-body :deep(td) {
+  padding: 7px;
+  border: 1px solid var(--line);
+  text-align: left;
+}
+
+.markdown-body :deep(th) {
+  background-color: #eef3f5;
+  font-weight: 800;
+}
+
+@media screen and (max-width: 380px) {
+  .chat-header {
+    padding: 15px 13px 10px;
+  }
+
+  .title-block h1 {
+    font-size: 22px;
+  }
+
+  .messages-container {
+    padding: 12px 10px 10px;
+  }
+
+  .message-stack,
+  .user-message .message-stack {
+    max-width: 86%;
+  }
+
+  .insight-panel {
+    flex-direction: column;
+  }
+
+  .panel-metrics {
+    justify-content: flex-start;
+  }
 }
 </style>

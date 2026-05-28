@@ -1,5 +1,5 @@
 <template>
-  <van-tabbar v-model="active" route>
+  <van-tabbar v-model="active" route class="app-tabbar">
     <van-tabbar-item to="/aichat" icon="chat-o">{{ $t('nav.aiChat') }}</van-tabbar-item>
     <van-tabbar-item to="/sessions" icon="comment-circle-o">{{ $t('nav.sessions') }}</van-tabbar-item>
     <van-tabbar-item to="/knowledge" icon="orders-o">知识库</van-tabbar-item>
