@@ -56,10 +56,12 @@ import { ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { showToast } from 'vant';
 import { useUserStore } from '../store/user';
+import { useSessionStore } from '../store/session';
 
 const router = useRouter();
 const route = useRoute();
 const userStore = useUserStore();
+const sessionStore = useSessionStore();
 
 const username = ref('');
 const password = ref('');
@@ -86,6 +88,9 @@ const onSubmit = async (values) => {
         message: result.message
       });
 
+      // 登录后重置为干净的新对话界面，并清空上一用户的会话列表
+      sessionStore.clearSessions();
+      sessionStore.requestNewChat();
       // 登录成功后跳回原页面（如果有 redirect 参数），否则去首页
       const redirect = route.query.redirect || '/'
       router.push(redirect);

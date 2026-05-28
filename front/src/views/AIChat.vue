@@ -132,7 +132,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue';
+import { ref, onMounted, onActivated, onUnmounted, nextTick, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import TabBar from '../components/TabBar.vue';
 import { showToast } from 'vant';
@@ -456,12 +456,17 @@ const syncWithRoute = async () => {
       showToast('加载会话历史失败');
     }
   } else {
-    resetChatState();
+    // 进入基础 /aichat：仅在显式「新对话」/登录时重置为干净界面；
+    // 切换到别的栏目再切回时保留最近这次的问答界面
+    if (sessionStore.newChatRequested) {
+      sessionStore.newChatRequested = false;
+      resetChatState();
+    }
   }
 };
 
-// /aichat 关闭了 keep-alive，每次进入页面组件都会重新挂载；
-// 但 vue-router 在同组件 /aichat ↔ /aichat/:id 切换时会复用实例，故仍需 watcher
+// /aichat 已开启 keep-alive，切换 tab 返回时组件实例与消息会被缓存保留；
+// watcher 负责同组件内 /aichat ↔ /aichat/:id 的路由切换同步
 watch(() => route.fullPath, (newFullPath, oldFullPath) => {
   if (newFullPath === oldFullPath) return;
   if (!route.path.startsWith('/aichat')) return;
@@ -469,6 +474,12 @@ watch(() => route.fullPath, (newFullPath, oldFullPath) => {
 });
 
 onMounted(() => {
+  syncWithRoute();
+  scrollToBottom();
+});
+
+// keep-alive 缓存的组件再次被激活时（切回 tab）同步一次路由状态
+onActivated(() => {
   syncWithRoute();
   scrollToBottom();
 });

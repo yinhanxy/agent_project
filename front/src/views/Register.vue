@@ -92,9 +92,11 @@ import { ref, reactive } from 'vue';
 import { useRouter } from 'vue-router';
 import { showToast, showDialog } from 'vant';
 import { useUserStore } from '../store/user';
+import { useSessionStore } from '../store/session';
 
 const router = useRouter();
 const userStore = useUserStore();
+const sessionStore = useSessionStore();
 
 const loading = ref(false);
 
@@ -197,6 +199,9 @@ const handleRegister = async () => {
         position: 'top'
       });
       
+      // 注册即登录，重置为干净的新对话界面
+      sessionStore.clearSessions();
+      sessionStore.requestNewChat();
       // 注册成功后跳转到对话页面
       setTimeout(() => {
         router.push('/aichat');

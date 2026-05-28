@@ -29,7 +29,7 @@ const routes = [
     component: () => import('../views/AIChat.vue'),
     meta: {
       title: 'AI问答',
-      keepAlive: false
+      keepAlive: true
     }
   },
   {
@@ -38,7 +38,7 @@ const routes = [
     component: () => import('../views/AIChat.vue'),
     meta: {
       title: 'AI问答',
-      keepAlive: false
+      keepAlive: true
     }
   },
   {

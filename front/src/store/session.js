@@ -6,7 +6,10 @@ export const useSessionStore = defineStore('session', {
   state: () => ({
     sessions: [],
     currentSession: null,
-    loading: false
+    loading: false,
+    // 显式「新对话」意图：仅登录或点击「新对话」时置 true，
+    // 让 /aichat 页在下次进入时重置为干净界面（切换 tab 返回不会置此标志）
+    newChatRequested: false
   }),
   
   getters: {
@@ -210,6 +213,12 @@ export const useSessionStore = defineStore('session', {
     // 设置当前会话
     setCurrentSession(session) {
       this.currentSession = session;
+    },
+
+    // 请求开启一段全新的对话（登录 / 点击「新对话」时调用）
+    requestNewChat() {
+      this.currentSession = null;
+      this.newChatRequested = true;
     },
     
     // 清除所有会话

@@ -203,7 +203,7 @@ const deleteSession = async (sessionId) => {
 
 // 开始新对话：清空当前会话引用并跳转到空白聊天页
 const createNewSession = () => {
-  sessionStore.setCurrentSession(null);
+  sessionStore.requestNewChat();
   router.push('/aichat');
 };
 </script>
