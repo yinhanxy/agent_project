@@ -121,8 +121,13 @@ async def delete_session(session_id: str, user_id: str = Depends(get_current_use
     return success_response(message=f"Session {session_id} deleted successfully")
 
 @chat_router.get("/sessions")
-async def get_all_sessions(router_service: ChatService = Depends(get_router_service)):
-    """获取所有会话ID"""
+async def get_all_sessions(
+    is_admin: bool = Depends(get_current_user_is_admin),
+    router_service: ChatService = Depends(get_router_service),
+):
+    """获取所有会话ID（仅管理员）"""
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="无权限")
     session_ids = await router_service.handle_get_all_sessions()
     return success_response(data={"sessions": session_ids})
 
