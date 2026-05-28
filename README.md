@@ -16,7 +16,6 @@
 - [页面入口](#页面入口)
 - [API 速览](#api-速览)
 - [RAG 与知识库机制](#rag-与知识库机制)
-- [开发工作流](#开发工作流)
 - [测试与构建](#测试与构建)
 - [常见问题](#常见问题)
 - [相关文档](#相关文档)
@@ -137,7 +136,6 @@ flowchart TD
 │   └── vite.config.js               # Vite 代理配置
 ├── docs/                            # Milvus、模型、排障等文档
 ├── docker-compose.milvus.yml        # 可选 Milvus 单机栈
-├── .codex/worktrees/                # 项目本地 Codex worktree 目录，不进仓库
 └── README.md
 ```
 
@@ -401,43 +399,6 @@ npm run dev -- --host 127.0.0.1
 - `editor`：可上传和删除文档。
 - `admin`：可管理成员和删除知识库。
 
-## 开发工作流
-
-本项目约定 Codex 的开发 worktree 放在主仓库根目录下：
-
-```text
-D:\source\agent\LangChain-RAG-FastAPI-Service\.codex\worktrees\<task>
-```
-
-不要把项目 worktree 放到用户目录的全局 `.codex` 里。`.codex/` 已经写入 `.gitignore`，不会进入仓库。
-
-推荐流程：
-
-```powershell
-$repo = "D:\source\agent\LangChain-RAG-FastAPI-Service"
-$task = "readme-refresh"
-$wt = "$repo\.codex\worktrees\$task"
-
-git -C $repo switch master
-git -C $repo status
-git -C $repo worktree add -b "codex/$task" $wt master
-```
-
-启动 dev server 前必须确认端口进程来自当前 worktree，否则浏览器看到的可能是 master 或旧 worktree 的代码：
-
-```powershell
-$port = 3000
-$conn = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue |
-  Where-Object State -eq Listen |
-  Select-Object -First 1
-
-if ($conn) {
-  Get-CimInstance Win32_Process -Filter "ProcessId=$($conn.OwningProcess)" |
-    Select-Object ProcessId, CommandLine |
-    Format-List
-}
-```
-
 ## 测试与构建
 
 前端生产构建：
@@ -473,7 +434,7 @@ Invoke-WebRequest -Uri "http://127.0.0.1:8001/docs/" -UseBasicParsing
 
 ### 前端改了但浏览器没变化
 
-优先检查 3000 端口的 Vite 进程路径。它必须指向当前 worktree 的 `front` 目录。路径错了就停掉旧进程，从当前 worktree 重新启动。
+优先检查 3000 端口的 Vite 进程路径。它必须指向当前要调试的项目 `front` 目录。路径错了就停掉旧进程，从正确目录重新启动。
 
 ### FastAPI 调 Django 超时
 
