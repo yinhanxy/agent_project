@@ -1,3 +1,4 @@
+import os
 import time
 from dotenv import load_dotenv
 
@@ -43,9 +44,17 @@ app.include_router(user_router)
 
 
 
+# CORS 白名单：默认本地前端，生产可用 env CORS_ALLOW_ORIGINS（逗号分隔）覆盖
+_default_origins = [
+    "http://localhost:3000", "http://localhost:3001",
+    "http://127.0.0.1:3000", "http://127.0.0.1:3001",
+]
+_cors_env = os.getenv("CORS_ALLOW_ORIGINS", "")
+cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()] or _default_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # 允许访问的源
+    allow_origins=cors_origins, # 允许访问的源（白名单，不再用 *）
     allow_credentials=True, # 允许携带cookie
     allow_methods=["*"], # 允许的请求方法
     allow_headers=["*"], # 允许的请求头
