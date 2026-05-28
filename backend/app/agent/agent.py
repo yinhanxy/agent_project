@@ -2,6 +2,7 @@ import json
 import os
 from typing import List, Optional, AsyncGenerator
 
+import httpx
 import openai
 from langsmith import traceable
 
@@ -89,15 +90,24 @@ class AgentLoop:
 
     def _build_client(self) -> openai.AsyncOpenAI:
         llm_type = os.getenv("LLM_TYPE", "ALIYUN").upper()
+        # 读超时是「两次 chunk 之间」的最大间隔（不是整段流的总时长），
+        # 故 60s 不会截断长回答；连接超时单独设短一些；失败重试 2 次。
+        timeout = httpx.Timeout(float(os.getenv("LLM_TIMEOUT", "60")), connect=10.0)
+        max_retries = int(os.getenv("LLM_MAX_RETRIES", "2"))
         if llm_type == "OLLAMA":
             base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/") + "/v1"
-            return openai.AsyncOpenAI(base_url=base_url, api_key="ollama")
+            return openai.AsyncOpenAI(
+                base_url=base_url, api_key="ollama",
+                timeout=timeout, max_retries=max_retries,
+            )
         return openai.AsyncOpenAI(
             base_url=os.getenv(
                 "ALIYUN_BASE_URL",
                 "https://dashscope.aliyuncs.com/compatible-mode/v1",
             ),
             api_key=os.getenv("ALIYUN_ACCESS_KEY_SECRET"),
+            timeout=timeout,
+            max_retries=max_retries,
         )
 
     def _model_name(self) -> str:
