@@ -1,469 +1,517 @@
-# 🚀 RAG对话系统
+# LangChain RAG FastAPI Service
 
-<div align="center">
-<a href="https://github.com/RMA-MUN/LangChain-RAG-FastAPI-Service/stargazers">
-  <img src="https://img.shields.io/github/stars/RMA-MUN/LangChain-RAG-FastAPI-Service?style=flat-square&label=Stars&color=orange" alt="Stars">
-</a>
-<a href="https://github.com/RMA-MUN/LangChain-RAG-FastAPI-Service/network/members">
-  <img src="https://img.shields.io/github/forks/RMA-MUN/LangChain-RAG-FastAPI-Service?style=flat-square&label=Forks&color=green" alt="Forks">
-</a>
-  <img src="https://img.shields.io/badge/python-v3.12.4-blue.svg" alt="System">
-</div>
+一个移动端优先的企业知识库问答系统，前端使用 Vue 3 + Vant，后端由 FastAPI RAG 服务和 Django 用户服务组成。项目支持用户登录、会话持久化、知识库管理、文档上传、向量检索、BM25 混合检索、重排序和流式 AI 问答。
 
-## 📋 目录
+当前项目更像一个完整的“知识库 + AI 问答”应用，而不是单纯的 LangChain demo：用户可以登录后创建或访问知识库，上传文档，在 AI 问答页基于个人或共享知识进行追问，并在会话页管理历史对话。
 
-- [项目简介](#项目简介)
-- [核心特性](#核心特性)
-- [项目架构](#项目架构)
-- [项目演示](#项目演示)
-- [快速开始](#快速开始)
+## 目录
+
+- [核心能力](#核心能力)
+- [系统架构](#系统架构)
 - [技术栈](#技术栈)
 - [项目结构](#项目结构)
-- [API 文档](#api文档)
+- [环境要求](#环境要求)
 - [配置说明](#配置说明)
-- [部署指南](#部署指南)
-- [开发指南](#开发指南)
-- [故障排除](#故障排除)
-- [文档](#文档)
-- [联系方式](#联系方式)
+- [本地启动](#本地启动)
+- [页面入口](#页面入口)
+- [API 速览](#api-速览)
+- [RAG 与知识库机制](#rag-与知识库机制)
+- [开发工作流](#开发工作流)
+- [测试与构建](#测试与构建)
+- [常见问题](#常见问题)
+- [相关文档](#相关文档)
 
-## 项目简介
+## 核心能力
 
-基于 **FastAPI + LangChain** 构建的企业级智能对话系统，集成先进的 **RAG（检索增强生成）** 技术，能够基于文档内容提供高精度的智能问答服务。系统采用微服务架构，具备会话持久化、知识库管理、多语言支持和模块化设计等特性。
+- AI 问答：支持普通 RAG 查询和 Agent 流式问答，回答可携带来源引用。
+- 会话管理：FastAPI 侧将会话和消息持久化到 MySQL，前端提供会话列表、切换和删除。
+- 知识库管理：支持个人、部门、公司范围的知识库，并提供成员权限模型。
+- 文档管理：支持 `txt`、`pdf`、`md`、`docx`、`pptx` 文件上传、去重、记录、删除和检索。
+- 混合检索：向量检索 + BM25 关键词检索，兼顾语义召回和精确词匹配。
+- 父子分块：小块用于召回，大块用于给 LLM 提供完整上下文。
+- 重排序：默认使用 Qwen3-Reranker-0.6B 对召回文档精排，也支持阿里云重排序配置。
+- 多向量后端：默认 ChromaDB，本地需要独立向量服务时可切换 Milvus。
+- 用户服务：Django 提供注册、登录、JWT、用户资料、管理员账号管理和文件上传接口。
+- 移动端 UI：底部 Tab 覆盖 AI 问答、会话、知识库、我的四个主入口。
 
-## 核心特性
-
-- **智能问答** 💬：基于 RAG 技术，结合文档检索和大语言模型，提供精准的问答体验
-- **会话持久化** 💾：使用 MySQL 存储会话历史，支持长期保存和回溯
-- **知识库管理** 📄：支持 PDF、TXT、MD、DOCX、PPTX 文档上传、处理和智能检索，提供独立的知识库管理页面
-- **混合检索** 🔍：向量检索（ChromaDB）+ 关键词检索（BM25）融合，BM25 索引仅在文档变更时重建，高效复用
-- **文档重排序** ⚖️：集成 Qwen3-Reranker-0.6B 对召回结果精排，提升答案准确性
-- **双平台 LLM** 🤖：支持阿里云百炼（Qwen3-Max）和本地 Ollama 模型，灵活切换
-- **多语言支持** 🌐：前端集成 i18n，支持中英文界面切换
-- **微服务架构** 🏗️：分离的用户服务（Django）和对话服务（FastAPI），易于扩展和维护
-- **速率限制** ⚡：Redis 驱动的接口限流，防止滥用
-
-## 项目架构
+## 系统架构
 
 ```mermaid
 flowchart TD
-    subgraph "前端层 (Vue3 + Vant, 端口 3000)"
-        A["AI 聊天页"] 
-        B["会话管理页"]
-        C["知识库管理页"]
-        D["个人中心页"]
+    subgraph Frontend["Vue 3 + Vite + Vant，端口 3000"]
+        A["AI 问答 /aichat"]
+        B["会话管理 /sessions"]
+        C["知识库 /knowledge"]
+        D["我的 /my"]
+        E["登录注册 /login /register"]
     end
 
-    subgraph "API 路由层"
-        E["FastAPI 后端 (端口 8000)"]
-        F["Django 用户服务 (端口 8001)"]
-        E -->|JWT 验证| F
-        E -->|限流| G["Redis (端口 6379)"]
+    subgraph Gateway["Vite 开发代理"]
+        P1["/api -> FastAPI 8000"]
+        P2["/user、/file -> Django 8001"]
     end
 
-    subgraph "业务服务层"
-        E -->|RAG 检索| H["RagService (singleton)"]
-        H -->|混合检索| I["ChromaDB + BM25 EnsembleRetriever"]
-        H -->|重排序| J["Qwen3-Reranker-0.6B"]
-        E -->|对话管理| K["SessionManager (MySQL 5.7, 端口 3306)"]
-        E -->|智能代理| L["LangChain AgentExecutor"]
-        L -->|LLM 调用| M["Qwen3-Max / Ollama"]
+    subgraph FastAPI["FastAPI RAG 服务，端口 8000"]
+        F1["Agent / 流式问答"]
+        F2["RAG 查询"]
+        F3["会话与消息"]
+        F4["知识库与文档管理"]
+        F5["限流中间件"]
     end
 
-    subgraph "数据存储层"
-        I -->|向量数据| N["ChromaDB (本地文件)"]
-        K -->|会话历史| O["MySQL 5.7 (Windows 服务)"]
-        F -->|用户数据| P["MySQL 8.0 (Docker, 端口 3307)"]
-        G -->|持久化| Q["Redis (Docker, 命名卷)"]
+    subgraph RAG["RAG 核心"]
+        R1["SmartTextSplitter"]
+        R2["Parent / Child Chunks"]
+        R3["ChromaDB 或 Milvus"]
+        R4["BM25 + 向量混合检索"]
+        R5["Qwen3 Reranker"]
     end
 
-    A & B & C & D -->|Vite Proxy| E
-    A & B & C & D -->|Vite Proxy /user/*| F
+    subgraph UserService["Django 用户服务，端口 8001"]
+        U1["注册 / 登录 / JWT"]
+        U2["用户资料"]
+        U3["管理员账号管理"]
+        U4["文件上传"]
+    end
+
+    subgraph Storage["存储与依赖"]
+        S1["MySQL：会话、消息、知识库、文档元数据"]
+        S2["Redis：限流、缓存、Token 黑名单"]
+        S3["Ollama 或阿里云百炼"]
+        S4["本地模型目录：Reranker"]
+    end
+
+    A & B & C & D & E --> Gateway
+    Gateway --> P1 --> FastAPI
+    Gateway --> P2 --> UserService
+    FastAPI --> RAG
+    FastAPI --> UserService
+    FastAPI --> Storage
+    UserService --> Storage
 ```
 
-## 项目演示
+## 技术栈
 
-### AI 聊天界面
-![AI聊天界面](./images/aichat.png)
+| 模块 | 技术 |
+| --- | --- |
+| 前端 | Vue 3、Vite 7、Vant 4、Vue Router、Pinia、vue-i18n、axios、marked、highlight.js、DOMPurify |
+| RAG 后端 | FastAPI、LangChain、LangChain Community、LangChain Chroma、LangChain Milvus、SQLAlchemy、Pydantic、Redis |
+| 用户服务 | Django 5.2、Django REST framework、Simple JWT、drf-yasg、Celery、django-redis |
+| 向量与检索 | ChromaDB、Milvus、BM25、jieba、sentence-transformers、Qwen3-Reranker-0.6B |
+| 模型服务 | 阿里云百炼 Qwen、Ollama、本地 reranker 模型 |
+| 数据存储 | MySQL、Redis、本地 ChromaDB 文件、Milvus Docker Compose |
 
-### 聊天管理界面
-![聊天管理界面](./images/chat_manager.png)
+## 项目结构
 
-### 知识库管理界面
-上传 PDF/TXT/MD/DOCX/PPTX 文件，文档自动向量化存入知识库，支持一键清空。
-
-### 用户服务界面
-![用户服务界面](./images/user_service.png)
-
-## 快速开始
-
-### 环境要求
-
-| 环境 | 版本要求 | 说明 |
-|------|----------|------|
-| Python | 3.12+ | 后端及用户服务运行时 |
-| uv | 0.11.9+ | Python 包管理器 |
-| Node.js | 16+ | 前端构建工具 |
-| Docker Desktop | 最新版 | 运行 MySQL 8 和 Redis |
-| MySQL 5.7 | Windows 服务 | FastAPI 会话历史数据库（端口 3306）|
-| Ollama | 最新版 | 本地嵌入模型（可选，推荐） |
-
-> **注意**：Django 用户服务要求 MySQL 8.0.11+，通过 Docker 提供，端口 3307。FastAPI 对话服务使用 Windows 本地 MySQL 5.7，端口 3306。
-
-### 克隆项目
-
-```bash
-git clone https://github.com/RMA-MUN/LangChain-RAG-FastAPI-Service.git
-cd LangChain-RAG-FastAPI-Service
+```text
+.
+├── backend/                         # FastAPI RAG 服务
+│   ├── app/
+│   │   ├── agent/                   # LangChain Agent、工具和中间件
+│   │   ├── cache/                   # Redis 缓存装饰器
+│   │   ├── config/                  # rag/chroma/milvus/agent/prompt 配置
+│   │   ├── core/                    # 响应、限流、日志、异常处理
+│   │   ├── db/                      # MySQL / Redis 初始化
+│   │   ├── models/                  # 会话、消息、知识库、文档、分块表
+│   │   ├── rag/                     # 检索、向量后端、重排序、切片
+│   │   ├── router/                  # FastAPI 路由
+│   │   ├── scheduler/               # 可选的目录监听导入任务
+│   │   └── services/                # 会话、知识库、文档、父子块服务
+│   ├── tests/                       # 后端测试
+│   ├── main.py                      # FastAPI 入口
+│   ├── pyproject.toml
+│   └── .env.example
+├── DjangoUserService/               # Django 用户服务
+│   ├── apps/user/                   # 注册、登录、JWT、用户资料、管理员接口
+│   ├── apps/file/                   # 文件上传接口
+│   ├── DjangoUserService/           # Django settings / urls / celery
+│   ├── manage.py
+│   ├── pyproject.toml
+│   └── .env.example
+├── front/                           # Vue 3 移动端前端
+│   ├── src/views/                   # AIChat、Sessions、KnowledgeBase、My 等页面
+│   ├── src/components/              # TabBar 等公共组件
+│   ├── src/config/api.js            # 前端 API 端点
+│   ├── src/router/index.js          # 页面路由
+│   ├── src/store/                   # Pinia store
+│   └── vite.config.js               # Vite 代理配置
+├── docs/                            # Milvus、模型、排障等文档
+├── docker-compose.milvus.yml        # 可选 Milvus 单机栈
+├── .codex/worktrees/                # 项目本地 Codex worktree 目录，不进仓库
+└── README.md
 ```
 
-### 安装依赖
+## 环境要求
 
-#### 后端依赖
-```bash
-cd backend
-uv sync
-```
+| 依赖 | 建议版本 | 说明 |
+| --- | --- | --- |
+| Windows + PowerShell | 当前本地开发环境 | 项目已有大量 Windows 启动约定 |
+| Python | backend >= 3.12；DjangoUserService >= 3.10 | 两个 Python 服务各自维护虚拟环境 |
+| uv | 最新版 | Python 依赖管理 |
+| Node.js | 20.19+ 或 22.12+ | Vite 7 的运行要求 |
+| MySQL | 8.x 推荐 | Django 5.2 推荐 MySQL 8.0.11+；FastAPI 也使用 MySQL 兼容库 |
+| Redis | 7.x 推荐 | 限流、缓存和 Token 黑名单 |
+| Docker Desktop | 可选 | 用于 Redis、MySQL、Milvus 等容器化依赖 |
+| Ollama | 可选但推荐 | 本地 embedding 或本地聊天模型 |
+| 阿里云百炼 API Key | 可选 | 使用 Qwen 云端模型时需要 |
 
-#### 用户服务依赖
-```bash
-cd DjangoUserService
-uv sync
-```
+## 配置说明
 
-#### 前端依赖
-```bash
-cd front
-npm install
-```
+### FastAPI 后端环境变量
 
-### 环境配置
-
-#### 1. 后端环境变量（`backend/.env`）
-
-复制 `backend/.env.example` 并按实际情况填写：
+在 `backend/.env` 中配置。下面是常用项，真实密钥不要提交到仓库：
 
 ```env
-# ==================== LLM 大模型配置 ====================
-# LLM类型：ALIYUN | OLLAMA
+# LLM：ALIYUN 或 OLLAMA
 LLM_TYPE=ALIYUN
-
-# ==================== Ollama 配置 (LLM_TYPE=OLLAMA) ====================
 OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL_NAME=qwen3:0.6b
-
-# ==================== 阿里云百炼配置 (LLM_TYPE=ALIYUN) ====================
+OLLAMA_MODEL_NAME=qwen3.5:0.8b
 ALIYUN_ACCESS_KEY_SECRET=your_api_key
 ALIYUN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-ALIYUN_MODEL_NAME=qwen3-max
+CHAT_MODEL_NAME=qwen3-max
 
-# ==================== 向量嵌入模型配置 ====================
-# EMBED_MODEL_TYPE: OLLAMA | ALIYUN
+# Embedding：OLLAMA 或 ALIYUN
 EMBED_MODEL_TYPE=OLLAMA
 TEXT_EMBEDDING_MODEL_NAME=qwen3-embedding:0.6b
 ALIYUN_EMBED_MODEL_NAME=qwen3-embedding
 
-# ==================== 数据库配置 ====================
-# FastAPI 使用本地 MySQL 5.7（端口 3306）
+# MySQL
 MYSQL_USER=root
-MYSQL_PASSWORD=your_mysql_password
-MYSQL_HOST=localhost
+MYSQL_PASSWORD=your_password
+MYSQL_HOST=127.0.0.1
 MYSQL_PORT=3306
 MYSQL_DATABASE=chat_history
 
-REDIS_HOST=localhost
+# Redis
+REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
 REDIS_DB=0
 
-# ==================== 服务配置 ====================
+# 向量后端：chroma 或 milvus
+VECTOR_STORE_BACKEND=chroma
+MILVUS_HOST=127.0.0.1
+MILVUS_PORT=19530
+
+# Django 用户服务
 DJANGO_API_URL=http://127.0.0.1:8001
 
-# ==================== LangSmith 调试追踪（可选）====================
-LANGCHAIN_TRACING_V2=false
-LANGCHAIN_API_KEY=your_langsmith_api_key
-LANGCHAIN_PROJECT=my-fastapi-langchain-project
-
-# ==================== 重排序模型配置 ====================
-# 首次启动时自动从 ModelScope 下载（约 1.1GB）
+# Reranker
+RERANKER_TYPE=LOCAL
 RERANKER_MODEL_PATH=D:\Hugging_Face\models\Qwen3-Reranker-0.6B
 
-# ==================== JWT 身份验证配置 ====================
-# 必须与用户服务的 JWT_SECRET_KEY 保持一致
-SECRET_KEY=MY_JWT_SECRET_KEY
+# JWT：必须和 DjangoUserService/.env 的 JWT_SECRET_KEY 一致
+SECRET_KEY=change_me
 ALGORITHM=HS256
+
+# 可选：目录监听导入
+SCHEDULER_ENABLED=false
+SCHEDULER_WATCH_DIR=data/watch
+SCHEDULER_INTERVAL_MINUTES=10
 ```
 
-#### 2. 用户服务环境变量（`DjangoUserService/.env`）
+### Django 用户服务环境变量
+
+在 `DjangoUserService/.env` 中配置：
 
 ```env
-# JWT 配置（必须与 backend/.env 的 SECRET_KEY 一致）
-JWT_SECRET_KEY=MY_JWT_SECRET_KEY
+JWT_SECRET_KEY=change_me
 
-# 数据库配置（Django 使用 Docker 内的 MySQL 8，端口 3307）
-DB_PORT=3307
 DB_NAME=user_service
 DB_USER=root
-DB_PASSWORD=your_mysql_password
-DB_HOST=localhost
+DB_PASSWORD=your_password
+DB_HOST=127.0.0.1
+DB_PORT=3306
 
-# Redis 配置
-CELERY_BROKER_URL=redis://localhost:6379/0
-CELERY_RESULT_BACKEND=redis://localhost:6379/0
-REDIS_CACHE_URL=redis://localhost:6379/1
+CELERY_BROKER_URL=redis://127.0.0.1:6379/0
+CELERY_RESULT_BACKEND=redis://127.0.0.1:6379/0
+REDIS_CACHE_URL=redis://127.0.0.1:6379/1
 ```
 
-### 启动基础服务（Docker）
+注意：
 
-#### 启动 MySQL 8（Django 用户服务专用，端口 3307）
+- `SECRET_KEY` 和 `JWT_SECRET_KEY` 必须保持一致，否则 FastAPI 无法校验 Django 签发的 JWT。
+- Windows 本地建议把 `localhost` 写成 `127.0.0.1`，避免 IPv6 回退导致接口或数据库请求变慢。
+- 使用 Milvus 时先启动 `docker-compose.milvus.yml`，并把 `VECTOR_STORE_BACKEND=milvus`。
 
-```bash
-# 首次创建（含命名卷持久化）
-docker run -d \
-  --name mysql8 \
-  -e MYSQL_ROOT_PASSWORD=your_mysql_password \
-  -e MYSQL_DATABASE=user_service \
-  -p 3307:3306 \
-  --default-authentication-plugin=mysql_native_password \
-  -v mysql8_data:/var/lib/mysql \
-  mysql:8.0
+## 本地启动
 
-# 后续直接启动已有容器
-docker start mysql8
-```
+以下命令以 PowerShell 为例。
 
-#### 启动 Redis（端口 6379）
-
-```bash
-# 首次创建（含命名卷持久化）
-docker run -d \
-  --name redis \
-  -p 6379:6379 \
-  -v redis_data:/data \
-  redis:latest redis-server --appendonly yes
-
-# 后续直接启动已有容器
-docker start redis
-```
-
-#### 启动 MySQL 5.7（FastAPI 会话数据库，Windows 服务）
+### 1. 安装依赖
 
 ```powershell
-net start mysql
+cd backend
+uv sync
+
+cd ..\DjangoUserService
+uv sync
+
+cd ..\front
+npm install
 ```
 
-> 首次使用需手动创建 `chat_history` 数据库：
-> ```sql
-> CREATE DATABASE chat_history CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-> ```
+### 2. 启动基础依赖
 
-#### 启动 Ollama（本地嵌入模型，如使用 OLLAMA 嵌入）
+MySQL 需要提前创建两个数据库，名称可以按 `.env` 调整：
 
-```bash
+```sql
+CREATE DATABASE chat_history CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE user_service CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+Redis 可以用 Docker 启动：
+
+```powershell
+docker run -d --name redis-rag -p 6379:6379 redis:alpine
+```
+
+如果使用 Ollama embedding：
+
+```powershell
 ollama serve
 ollama pull qwen3-embedding:0.6b
 ```
 
-### 初始化用户服务数据库
+如果使用 Milvus：
 
-```bash
+```powershell
+docker compose -f docker-compose.milvus.yml up -d
+```
+
+### 3. 初始化 Django 数据库
+
+```powershell
 cd DjangoUserService
-uv run python manage.py migrate
+.\.venv\Scripts\python.exe manage.py migrate
 ```
 
-### 启动应用服务
+### 4. 启动三个应用服务
 
-| 服务 | 命令 | 端口 |
-|------|------|------|
-| FastAPI 后端 | `cd backend && uv run uvicorn main:app --host 0.0.0.0 --port 8000` | 8000 |
-| Django 用户服务 | `cd DjangoUserService && uv run python manage.py runserver 0.0.0.0:8001` | 8001 |
-| Vue 前端 | `cd front && npm run dev` | 3000 |
+Django 用户服务：
 
-> **局域网访问**：前端和后端均绑定 `0.0.0.0`，同一局域网内的设备可通过 `http://<本机IP>:3000` 访问。
-
-### 访问地址
-
-| 入口 | 地址 |
-|------|------|
-| 前端应用 | `http://localhost:3000` |
-| FastAPI 交互文档 | `http://localhost:8000/docs` |
-| Django 用户服务 | `http://localhost:8001/api/` |
-
-## 技术栈
-
-### 后端技术
-
-| 技术 | 版本 | 说明 |
-|------|------|------|
-| FastAPI | 最新版 | 高性能异步 Web 框架 |
-| LangChain | 最新版 | 大语言模型应用开发框架 |
-| ChromaDB | 最新版 | 轻量级向量数据库（SQLite 后端）|
-| BM25Retriever | — | 关键词稀疏检索，与向量检索融合 |
-| Django 5.2 | 5.2 | 用户认证和管理系统（需 MySQL 8+）|
-| MySQL 5.7 | 5.7 | FastAPI 会话历史数据库 |
-| MySQL 8.0 | 8.0 (Docker) | Django 用户数据库 |
-| Redis | 最新版 (Docker) | 接口限流与缓存 |
-| Qwen3-Max | — | 阿里云百炼大语言模型 |
-| Qwen3-Reranker-0.6B | — | 文档重排序模型（本地推理）|
-| Ollama | — | 本地 LLM 和嵌入模型服务 |
-
-### 前端技术
-
-| 技术 | 说明 |
-|------|------|
-| Vue 3 | 现代化前端框架 |
-| Vite | 极速构建工具，内置 API 代理 |
-| Vant UI | 移动端 UI 组件库 |
-| Vue Router | 路由管理 |
-| Pinia | 状态管理 |
-| i18n | 国际化支持（中英文） |
-
-## 项目结构
-
-```
-├── backend/                  # FastAPI 后端服务
-│   ├── app/
-│   │   ├── agent/            # LangChain 智能代理
-│   │   ├── config/           # 配置文件（chroma.yaml 等）
-│   │   ├── model/            # 数据模型定义
-│   │   ├── prompt/           # 提示词模板
-│   │   ├── rag/              # RAG 核心（向量存储、BM25、重排序）
-│   │   ├── router/           # API 路由（聊天、向量上传、会话管理）
-│   │   ├── services/         # 业务服务（会话管理、速率限制）
-│   │   └── utils/            # 工具函数
-│   ├── data/                 # ChromaDB 数据、上传文件
-│   ├── main.py               # 应用入口
-│   ├── .env.example          # 环境变量模板
-│   └── pyproject.toml        # 依赖配置（uv 管理）
-├── front/                    # Vue 3 前端
-│   ├── src/
-│   │   ├── views/            # 页面组件（AIChat、Sessions、KnowledgeBase、My）
-│   │   ├── components/       # 公共组件（TabBar 等）
-│   │   ├── store/            # Pinia 状态管理
-│   │   ├── router/           # 路由配置
-│   │   └── locales/          # i18n 语言文件
-│   └── package.json
-├── DjangoUserService/        # Django 用户服务
-│   ├── apps/user/            # 用户应用（注册、登录、JWT）
-│   ├── .env.example          # 环境变量模板
-│   └── pyproject.toml
-└── README.md
+```powershell
+cd DjangoUserService
+cmd /c "set HTTP_PROXY=& set HTTPS_PROXY=& set http_proxy=& set https_proxy=& .\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8001"
 ```
 
-## 向量数据库配置
+FastAPI RAG 服务：
 
-修改 `backend/app/config/chroma.yaml`：
-
-```yaml
-collection_name: rag_collection
-persist_directory: data/chromadb
-k: 3
-
-data_path: data
-md5_hex_store: data/md5_hex_store/md5_hex_store.txt
-allow_knowledge_file_types: ["txt", "pdf", "md", "docx", "pptx"]
-
-chunk_size: 200
-chunk_overlap: 20
-separators: ["\n\n", "\n", "。", "！", "？", "!", "?", " ", ""]
+```powershell
+cd backend
+cmd /c "set HTTP_PROXY=& set HTTPS_PROXY=& set http_proxy=& set https_proxy=& .\.venv\Scripts\uvicorn.exe main:app --host 127.0.0.1 --port 8000 --reload"
 ```
 
-## API文档
+Vue 前端：
 
-### FastAPI 后端 API
-
-- **[API 文档](./backend/api.md)**：详细的 API 接口文档
-- **[交互式文档](http://localhost:8000/docs)**：启动服务后访问自动生成的交互式文档
-
-主要接口：
-
-| 接口 | 方法 | 说明 |
-|------|------|------|
-| `/api/chat` | POST | 发送消息，触发 RAG 检索 + Agent 回复 |
-| `/api/vector/add/single` | POST | 上传单个文件到知识库 |
-| `/api/vector/add/multiple` | POST | 批量上传文件到知识库 |
-| `/api/vector/clean` | DELETE | 清空当前用户的知识库 |
-| `/api/sessions` | GET | 获取会话列表 |
-
-### Django 用户服务 API
-
-- **[API 文档](./DjangoUserService/api.md)**：详细的用户服务 API 文档
-- **[交互式文档](http://localhost:8001/api/)**：用户服务 API 文档
-
-## 部署指南
-
-详细的部署说明请参考：[部署指南](./docs/deployment.md)
-
-## 开发指南
-
-### 知识库使用流程
-
-1. 注册并登录账号
-2. 点击底部导航栏「知识库」标签
-3. 点击上传区域或拖拽文件（支持 PDF、TXT、MD、DOCX、PPTX，单文件 ≤ 20MB）
-4. 点击「全部上传」，文件自动向量化并存入 ChromaDB
-5. 在 AI 聊天页发送问题，系统自动从知识库检索相关文档并生成回答
-
-### BM25 索引机制
-
-BM25 检索器采用**单例 + 懒加载**模式：
-- 首次请求时构建索引（基于 ChromaDB 中的所有文档）
-- 文档上传或删除后自动失效，下次请求重建
-- 同一进程内复用，避免每次请求重建带来的性能损耗
-
-### 代码结构说明
-
-- `backend/app/rag/rag_service.py`：RAG 服务单例，管理混合检索器生命周期
-- `backend/app/rag/vector_store_service.py`：ChromaDB 向量存储，文档 CRUD
-- `backend/app/agent/agent_tools.py`：LangChain Tool 定义，调用 RAG 服务
-- `backend/app/router/chat_service.py`：HTTP 路由处理，含向量上传和知识库清空
-- `front/src/views/KnowledgeBase.vue`：知识库管理前端页面
-
-## 故障排除
-
-### 常见问题
-
-**Q: 启动 FastAPI 时报 `RERANKER_MODEL_PATH` 不存在**
-
-首次启动时，系统会自动从 ModelScope 下载 Qwen3-Reranker-0.6B 模型（约 1.1GB）到 `.env` 中指定的路径，请确保磁盘空间充足并等待下载完成。
-
-**Q: Django 迁移失败，提示 MySQL 版本不支持**
-
-Django 5.2 需要 MySQL 8.0.11+，请确认 `DB_PORT=3307` 指向 Docker 中的 MySQL 8 容器，而非本地 MySQL 5.7。
-
-**Q: Docker 容器重启后数据丢失**
-
-确认创建容器时使用了命名卷（`-v mysql8_data:/var/lib/mysql` 和 `-v redis_data:/data`），命名卷会在容器删除后保留数据。
-
-**Q: Redis 连接失败**
-
-```bash
-docker start redis
+```powershell
+cd front
+npm run dev -- --host 127.0.0.1
 ```
 
-**Q: 前端代理报错 `/api/*` 或 `/user/*` 无法访问**
+### 5. 访问地址
 
-确认 FastAPI（端口 8000）和 Django（端口 8001）均已启动，Vite 代理配置在 `front/vite.config.js` 中。
+| 服务 | 地址 |
+| --- | --- |
+| 前端应用 | `http://127.0.0.1:3000` |
+| FastAPI 文档 | `http://127.0.0.1:8000/docs` |
+| Django Swagger | `http://127.0.0.1:8001/docs/` |
+| Django ReDoc | `http://127.0.0.1:8001/redoc/` |
 
-更多故障排除请参考：[故障排除指南](./docs/troubleshooting.md)
+## 页面入口
 
-## 文档
+| 页面 | 路由 | 说明 |
+| --- | --- | --- |
+| AI 问答 | `/aichat`、`/aichat/:sessionId` | 新对话、历史会话追问、流式回答、Markdown 渲染 |
+| 会话管理 | `/sessions` | 查看、进入和删除历史会话 |
+| 知识库 | `/knowledge` | 创建知识库、查看文档、上传文档、触发知识库问答 |
+| 我的 | `/my` | 用户信息、设置、账号管理入口 |
+| 登录 / 注册 | `/login`、`/register` | 用户认证 |
+| 个人资料 | `/profile` | 用户资料维护 |
+| 设置 | `/settings` | 偏好设置 |
+| 账号管理 | `/admin/accounts` | 管理员用户管理 |
 
-- **[ModelScope 模型配置](./docs/huggingface_model.md)**：Qwen3-Reranker 下载和配置说明
-- **[故障排除](./docs/troubleshooting.md)**：常见问题和解决方案
-- **[API 文档](./backend/api.md)**：后端 API 接口文档
-- **[用户服务 API](./DjangoUserService/api.md)**：用户服务 API 文档
+## API 速览
 
-## Star History
+### FastAPI RAG 服务
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=RMA-MUN/LangChain-RAG-FastAPI-Service&type=date&theme=dark&legend=top-left" />
-  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=RMA-MUN/LangChain-RAG-FastAPI-Service&type=date&legend=top-left" />
-  <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=RMA-MUN/LangChain-RAG-FastAPI-Service&type=date&legend=top-left" />
-</picture>
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/agent/query/stream` | Agent 流式问答 |
+| `POST` | `/api/rag/query` | 普通 RAG 查询 |
+| `GET` | `/api/session/{session_id}` | 获取单个会话历史 |
+| `DELETE` | `/api/session/{session_id}` | 删除会话 |
+| `GET` | `/api/sessions` | 获取当前用户会话 |
+| `POST` | `/api/vector/add/single` | 上传单个文档到个人知识 |
+| `POST` | `/api/vector/add/multiple` | 批量上传文档 |
+| `GET` | `/api/vector/list` | 查看个人文档 |
+| `DELETE` | `/api/vector/document/{doc_id}` | 删除文档 |
+| `DELETE` | `/api/vector/clean` | 清空个人文档 |
+| `POST` | `/api/kb` | 创建知识库 |
+| `GET` | `/api/kb/list` | 查看可访问知识库 |
+| `PATCH` | `/api/kb/{kb_id}` | 更新知识库 |
+| `DELETE` | `/api/kb/{kb_id}` | 删除知识库 |
+| `POST` | `/api/kb/{kb_id}/documents` | 上传文档到知识库 |
+| `GET` | `/api/kb/{kb_id}/documents` | 查看知识库文档 |
+| `POST` | `/api/kb/{kb_id}/query` | 在指定知识库内问答 |
 
-## 联系方式
+### Django 用户服务
 
-如有任何问题或建议，欢迎在 GitHub 提交 issues 或联系作者：
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/user/register/` | 注册 |
+| `POST` | `/user/login/` | 登录并签发 JWT |
+| `POST` | `/user/logout/` | 登出并加入 Token 黑名单 |
+| `POST` | `/user/refresh-token/` | 刷新 Token |
+| `GET` | `/user/detail/` | 获取当前用户信息 |
+| `PUT/PATCH` | `/user/update/` | 更新用户资料 |
+| `GET` | `/user/list/` | 管理员获取用户列表 |
+| `PATCH` | `/user/{uuid}/set-admin/` | 设置管理员权限 |
+| `POST` | `/file/upload/` | 文件上传 |
 
-- Email: n3032747608@163.com
-- QQ: 3032747608
+## RAG 与知识库机制
+
+### 向量后端
+
+通过 `VECTOR_STORE_BACKEND` 选择后端：
+
+- `chroma`：默认嵌入式模式，数据保存在 `backend/data/chromadb`。
+- `milvus`：独立向量服务，依赖 `docker-compose.milvus.yml` 中的 etcd、MinIO、Milvus。
+
+### 文档处理
+
+1. 上传文件后写入文档记录表，记录 `doc_id`、`user_id`、`kb_id`、文件名、MD5、大小和分块数。
+2. 文本按语言智能分块，生成父块和子块。
+3. 子块写入向量库，同时保存到 MySQL，供 BM25 构建索引。
+4. 同名或相同 MD5 的文档按用户和知识库范围隔离，避免跨用户误判。
+
+### 检索流程
+
+1. 根据用户和知识库权限过滤可访问内容。
+2. 向量检索召回语义相似子块。
+3. BM25 召回关键词相关子块。
+4. 合并召回结果并映射到父块上下文。
+5. 使用 reranker 精排。
+6. 将上下文交给 LLM 生成回答，并返回引用来源。
+
+### 知识库权限
+
+知识库支持 `personal`、`dept`、`company` 范围。成员权限分为：
+
+- `viewer`：可检索。
+- `editor`：可上传和删除文档。
+- `admin`：可管理成员和删除知识库。
+
+## 开发工作流
+
+本项目约定 Codex 的开发 worktree 放在主仓库根目录下：
+
+```text
+D:\source\agent\LangChain-RAG-FastAPI-Service\.codex\worktrees\<task>
+```
+
+不要把项目 worktree 放到用户目录的全局 `.codex` 里。`.codex/` 已经写入 `.gitignore`，不会进入仓库。
+
+推荐流程：
+
+```powershell
+$repo = "D:\source\agent\LangChain-RAG-FastAPI-Service"
+$task = "readme-refresh"
+$wt = "$repo\.codex\worktrees\$task"
+
+git -C $repo switch master
+git -C $repo status
+git -C $repo worktree add -b "codex/$task" $wt master
+```
+
+启动 dev server 前必须确认端口进程来自当前 worktree，否则浏览器看到的可能是 master 或旧 worktree 的代码：
+
+```powershell
+$port = 3000
+$conn = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue |
+  Where-Object State -eq Listen |
+  Select-Object -First 1
+
+if ($conn) {
+  Get-CimInstance Win32_Process -Filter "ProcessId=$($conn.OwningProcess)" |
+    Select-Object ProcessId, CommandLine |
+    Format-List
+}
+```
+
+## 测试与构建
+
+前端生产构建：
+
+```powershell
+cd front
+npm run build
+```
+
+后端测试：
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest
+```
+
+Django 基础检查：
+
+```powershell
+cd DjangoUserService
+.\.venv\Scripts\python.exe manage.py check
+```
+
+常用烟测：
+
+```powershell
+Invoke-WebRequest -Uri "http://127.0.0.1:3000/" -UseBasicParsing
+Invoke-WebRequest -Uri "http://127.0.0.1:8000/" -UseBasicParsing
+Invoke-WebRequest -Uri "http://127.0.0.1:8001/docs/" -UseBasicParsing
+```
+
+## 常见问题
+
+### 前端改了但浏览器没变化
+
+优先检查 3000 端口的 Vite 进程路径。它必须指向当前 worktree 的 `front` 目录。路径错了就停掉旧进程，从当前 worktree 重新启动。
+
+### FastAPI 调 Django 超时
+
+本机代理可能拦截了 `127.0.0.1` 请求。启动 Django 和 FastAPI 时清空代理变量：
+
+```powershell
+cmd /c "set HTTP_PROXY=& set HTTPS_PROXY=& set http_proxy=& set https_proxy=& <启动命令>"
+```
+
+### Django 或数据库操作很慢
+
+Windows 下 `localhost` 可能先走 IPv6 再回退，建议 `.env` 中统一使用 `127.0.0.1`。
+
+### 知识库接口返回 401
+
+需要先登录并让前端携带 `Authorization: Bearer <token>`。FastAPI 会调用 Django `/user/detail/` 校验用户身份。
+
+### Redis 连接失败
+
+确认 6379 端口已启动：
+
+```powershell
+docker start redis-rag
+```
+
+### Reranker 首次启动慢
+
+首次启动会检查或下载 Qwen3-Reranker-0.6B。确认 `RERANKER_MODEL_PATH` 指向可写且空间充足的目录。
+
+### Vite build 提示 chunk 超过 500 kB
+
+当前 AI 问答页依赖 Markdown、高亮、净化和聊天渲染逻辑，生产构建可能出现 chunk size warning。这是性能优化提示，不代表构建失败。
+
+## 相关文档
+
+- [FastAPI API 文档](./backend/api.md)
+- [Django 用户服务 API](./DjangoUserService/api.md)
+- [前端 API 说明](./front/api.md)
+- [ModelScope 模型说明](./docs/modelscope_model.md)
+- [Milvus 迁移说明](./docs/migrate-to-milvus.md)
+- [故障排除](./docs/troubleshooting.md)
