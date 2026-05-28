@@ -56,6 +56,7 @@
       <van-cell-group inset class="modern-cell-group">
         <van-cell :title="$t('my.notifications')" label="系统通知和服务消息" icon="bell" is-link />
         <van-cell :title="$t('my.settings')" label="主题、语言和隐私设置" icon="setting-o" is-link @click="goToSettings" />
+        <van-cell v-if="isLogin" title="切换账号" label="退出当前账号并登录其他账号" icon="exchange" is-link @click="handleSwitchAccount" />
         <van-cell v-if="isLogin" :title="$t('my.logout')" label="退出当前账号" icon="close" @click="handleLogout" />
       </van-cell-group>
     </div>
@@ -68,11 +69,13 @@ import { onMounted } from 'vue';
 import { useUserStore } from '../store/user';
 import { useRouter } from 'vue-router';
 import { computed, ref } from 'vue';
-import { showDialog, showToast } from 'vant';
+import { showDialog } from 'vant';
 import TabBar from '../components/TabBar.vue';
 import { useI18n } from 'vue-i18n';
+import { useSessionStore } from '../store/session';
 
 const userStore = useUserStore();
+const sessionStore = useSessionStore();
 const router = useRouter();
 const { t } = useI18n();
 
@@ -112,15 +115,36 @@ const goToSettings = () => {
   router.push('/settings');
 };
 
+const clearSessionState = () => {
+  sessionStore.clearSessions();
+  sessionStore.requestNewChat();
+};
+
+// 切换账号
+const handleSwitchAccount = () => {
+  showDialog({
+    title: '切换账号',
+    message: '切换账号会退出当前账号，是否继续？',
+    showCancelButton: true,
+  }).then(async (action) => {
+    if (action === 'confirm') {
+      await userStore.logout();
+      clearSessionState();
+      router.push('/login?redirect=/my');
+    }
+  });
+};
+
 // 退出登录
 const handleLogout = () => {
   showDialog({
     title: t('common.confirm'),
     message: t('my.logout') + '?',
     showCancelButton: true,
-  }).then((action) => {
+  }).then(async (action) => {
     if (action === 'confirm') {
-      userStore.logout();
+      await userStore.logout();
+      clearSessionState();
       router.push('/login');
     }
   });
