@@ -2,6 +2,7 @@ from fastapi import Request, HTTPException
 
 from app.db.redis_config import connect_redis
 from app.core.logger_handler import logger
+from app.utils.auth_utils import decode_django_jwt
 
 
 def rate_limit(limit: int = 1, window: int = 60):
@@ -12,14 +13,23 @@ def rate_limit(limit: int = 1, window: int = 60):
     :return: 依赖函数
     """
     async def dependency(request: Request):
-        # 获取客户端IP
-        client_ip = request.client.host
-        if not client_ip:
-            client_ip = request.headers.get('X-Forwarded-For', '').split(',')[0].strip() or 'unknown'
+        # 限流身份：优先按登录用户（从 Authorization 头可选解出，不强制鉴权），
+        # 拿不到再回落到客户端 IP —— 避免反代后所有人共用同一 IP 桶而互相误伤
+        identity = None
+        auth = request.headers.get("authorization")
+        if auth and auth.lower().startswith("bearer "):
+            payload = decode_django_jwt(auth[7:].strip())
+            if payload and payload.get("user_id"):
+                identity = f"user:{payload['user_id']}"
+        if identity is None:
+            client_ip = request.client.host
+            if not client_ip:
+                client_ip = request.headers.get('X-Forwarded-For', '').split(',')[0].strip() or 'unknown'
+            identity = f"ip:{client_ip}"
 
         # 生成限流键（按路由路径隔离，防止不同接口共享计数器）
         path = request.url.path
-        key = f"rate_limit:{path}:{client_ip}"
+        key = f"rate_limit:{path}:{identity}"
 
         try:
             redis = await connect_redis()
