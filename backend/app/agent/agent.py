@@ -15,6 +15,45 @@ from app.core.logger_handler import logger
 from app.services import session_manager as sm
 from app.utils.prompt_loader import load_prompt
 
+# ── token 估算 ────────────────────────────────────────────────────────────────
+# 流式过程中用 tiktoken 粗估 token 数（qwen 非精确，仅用于实时跳动），
+# 每轮 LLM 调用结束后由 API 返回的精确 usage 校准。
+
+_token_encoder = None
+
+
+def _get_encoder():
+    global _token_encoder
+    if _token_encoder is None:
+        try:
+            import tiktoken
+            _token_encoder = tiktoken.get_encoding("cl100k_base")
+        except Exception as e:  # tiktoken 不可用时降级为字符估算
+            logger.warning(f"[token估算] tiktoken 不可用，降级为字符估算: {e}")
+            _token_encoder = False
+    return _token_encoder
+
+
+def _estimate_text_tokens(text: str) -> int:
+    if not text:
+        return 0
+    enc = _get_encoder()
+    if enc:
+        return len(enc.encode(text))
+    return max(1, len(text) // 2)  # 降级：约 2 字符/token
+
+
+def _estimate_messages_tokens(messages: list) -> int:
+    total = 0
+    for m in messages:
+        content = m.get("content")
+        if isinstance(content, str):
+            total += _estimate_text_tokens(content)
+        for tc in m.get("tool_calls") or []:
+            total += _estimate_text_tokens(tc.get("function", {}).get("arguments", ""))
+        total += 4  # 每条消息的角色/分隔符开销近似
+    return total
+
 
 class AgentLoop:
     """
@@ -136,35 +175,54 @@ class AgentLoop:
         真 token 级流式执行。
 
         yield 事件：
-          {"type": "token", "data": str}          —— LLM 输出 token
-          {"type": "step",  "data": {tool, ...}}  —— 工具调用记录
-          {"type": "done",  "steps": list}        —— 全部完成
+          {"type": "token", "data": str}             —— LLM 输出 token
+          {"type": "step",  "data": {tool, ...}}     —— 工具调用记录
+          {"type": "usage", "tokens": int, ...}      —— 实时 token 估算
+          {"type": "done",  "steps": list, "tokens"} —— 全部完成（精确总数）
         """
         messages = self._build_messages(history, query)
         steps = []
         on_agent_start(messages)
 
+        committed_tokens = 0  # 已完成各轮 LLM 调用的精确 total_tokens 之和
+
         while True:
             on_model_call(messages)
+            prompt_est = _estimate_messages_tokens(messages)
             stream = await self.client.chat.completions.create(
                 model=self._model_name(),
                 messages=messages,
                 tools=self.tool_schemas,
                 tool_choice="auto",
                 stream=True,
+                stream_options={"include_usage": True},
             )
 
             # 累积本轮输出
             content_buf = ""
             tool_calls_buf: dict[int, dict] = {}  # chunk index -> {id, name, args}
+            turn_usage_total: Optional[int] = None
+            last_emit_len = 0
 
             async for chunk in stream:
+                # include_usage 的最后一帧 choices 为空、仅带 usage
+                if getattr(chunk, "usage", None) is not None:
+                    turn_usage_total = chunk.usage.total_tokens
+                if not chunk.choices:
+                    continue
+
                 choice = chunk.choices[0]
                 delta = choice.delta
 
                 if delta.content:
                     content_buf += delta.content
                     yield {"type": "token", "data": delta.content}
+
+                    # 节流：内容每增长约 20 字符发一次实时估算
+                    if len(content_buf) - last_emit_len >= 20:
+                        last_emit_len = len(content_buf)
+                        running = committed_tokens + prompt_est + _estimate_text_tokens(content_buf)
+                        yield {"type": "usage", "tokens": running, "estimated": True}
 
                 if delta.tool_calls:
                     for tc in delta.tool_calls:
@@ -177,6 +235,12 @@ class AgentLoop:
                             tool_calls_buf[idx]["name"] += tc.function.name
                         if tc.function and tc.function.arguments:
                             tool_calls_buf[idx]["args"] += tc.function.arguments
+
+            # 本轮结束：用精确 usage 累加；拿不到则用估算兜底
+            if turn_usage_total is not None:
+                committed_tokens += turn_usage_total
+            else:
+                committed_tokens += prompt_est + _estimate_text_tokens(content_buf)
 
             on_model_response(bool(tool_calls_buf), len(content_buf))
 
@@ -219,7 +283,7 @@ class AgentLoop:
                 })
 
         on_agent_end("", steps)
-        yield {"type": "done", "steps": steps}
+        yield {"type": "done", "steps": steps, "tokens": committed_tokens}
 
 
 # ── 全局单例（实例无状态，多请求安全复用）────────────────────────────────────
@@ -254,19 +318,23 @@ async def get_agent_stream_response(
 
     full_response: list[str] = []
     steps: list = []
+    total_tokens = 0
 
     async for event in agent_loop.stream(query, history):
         if event["type"] == "token":
             full_response.append(event["data"])
             yield f"data: {json.dumps({'type': 'response', 'content': event['data']}, ensure_ascii=False)}\n\n"
+        elif event["type"] == "usage":
+            yield f"data: {json.dumps({'type': 'usage', 'tokens': event['tokens'], 'estimated': True}, ensure_ascii=False)}\n\n"
         elif event["type"] == "step":
             steps.append(event["data"])
         elif event["type"] == "done":
             steps = event["steps"]
+            total_tokens = event.get("tokens", 0)
 
     response = "".join(full_response) or "抱歉，我无法理解您的请求。"
     await sm.session_manager.add_message(session_id, user_id, query, response)
 
     citations = get_rag_citations()
-    yield f"data: {json.dumps({'type': 'done', 'session_id': session_id, 'citations': citations}, ensure_ascii=False)}\n\n"
-    logger.info(f"[Agent流式] 完成 session={session_id} steps={len(steps)} citations={len(citations)}")
+    yield f"data: {json.dumps({'type': 'done', 'session_id': session_id, 'citations': citations, 'tokens': total_tokens}, ensure_ascii=False)}\n\n"
+    logger.info(f"[Agent流式] 完成 session={session_id} steps={len(steps)} citations={len(citations)} tokens={total_tokens}")

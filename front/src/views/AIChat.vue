@@ -94,6 +94,14 @@
                 </div>
               </div>
             </div>
+
+            <div
+              v-if="message.role === 'assistant' && message.tokens != null"
+              class="token-usage"
+            >
+              <van-icon name="balance-o" size="11" />
+              <span>{{ message.tokensEstimated ? '约 ' : '' }}{{ message.tokens }} tokens</span>
+            </div>
           </div>
         </div>
       </div>
@@ -212,7 +220,7 @@ const sendMessage = async () => {
   userInput.value = '';
   
   // 添加AI消息占位
-  messages.value.push({ role: 'assistant', content: '', citations: [], showCitations: false, usedRag: false });
+  messages.value.push({ role: 'assistant', content: '', citations: [], showCitations: false, usedRag: false, tokens: null, tokensEstimated: false });
   
   // 滚动到底部
   await nextTick();
@@ -319,6 +327,15 @@ const fetchAIResponse = async (userMessage) => {
                 sessionId.value = json.session_id;
               }
               break;
+            case 'usage': {
+              // 流式 token 估算，实时跳动
+              const lastMsg = messages.value[messages.value.length - 1];
+              if (lastMsg && lastMsg.role === 'assistant') {
+                lastMsg.tokens = json.tokens;
+                lastMsg.tokensEstimated = true;
+              }
+              break;
+            }
             case 'done':
               // 保存会话ID并在所有数据接收完成后跳转
               if (json.session_id && typeof json.session_id === 'string' && json.session_id.trim()) {
@@ -333,6 +350,14 @@ const fetchAIResponse = async (userMessage) => {
                 const lastMsg = messages.value[messages.value.length - 1];
                 if (lastMsg && lastMsg.role === 'assistant') {
                   lastMsg.citations = json.citations;
+                }
+              }
+              // 用精确 token 总数覆盖估算值
+              if (json.tokens != null) {
+                const lastMsg = messages.value[messages.value.length - 1];
+                if (lastMsg && lastMsg.role === 'assistant') {
+                  lastMsg.tokens = json.tokens;
+                  lastMsg.tokensEstimated = false;
                 }
               }
               break;
@@ -772,6 +797,16 @@ const loadSessionHistory = (session) => {
   background: #ffffff;
   color: #526476;
   font-size: 11px;
+}
+
+.token-usage {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  color: #94a3b4;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 .citation-filename {
