@@ -49,9 +49,12 @@ export const useUserStore = defineStore('user', {
           // 将token存入到localStorage
           localStorage.setItem('jwt_token', token);
           
-          this.userInfo = userInfo;
-          this.token = token;
-          this.isLogin = true;
+          this.$patch({
+            userInfo,
+            token,
+            isAdmin: Boolean(userInfo?.is_admin),
+            isLogin: true
+          });
           
           return {
             success: true,
@@ -89,9 +92,12 @@ export const useUserStore = defineStore('user', {
         console.error('注销请求失败:', error);
       } finally {
         // 清除本地状态
-        this.userInfo = null;
-        this.token = '';
-        this.isLogin = false;
+        this.$patch({
+          userInfo: null,
+          token: '',
+          isLogin: false,
+          isAdmin: false
+        });
         // 从localStorage中清除token
         localStorage.removeItem('jwt_token');
       }
@@ -121,7 +127,10 @@ export const useUserStore = defineStore('user', {
         // 检查响应状态
         if (response.status === 200) {
           // 更新用户信息
-          this.userInfo = response.data.data;
+          this.$patch({
+            userInfo: response.data.data,
+            isAdmin: Boolean(response.data.data?.is_admin)
+          });
           
           return {
             success: true,
@@ -170,6 +179,7 @@ export const useUserStore = defineStore('user', {
         if (response.status === 200) {
           // 更新用户信息
           this.userInfo = response.data.user;
+          this.isAdmin = Boolean(this.userInfo?.is_admin);
           
           // 如果返回了新的token，更新token
           if (response.data.token) {
@@ -246,9 +256,12 @@ export const useUserStore = defineStore('user', {
     
     // 清除本地认证状态（token过期/失效时调用）
     clearAuth() {
-      this.userInfo = null;
-      this.token = '';
-      this.isLogin = false;
+      this.$patch({
+        userInfo: null,
+        token: '',
+        isLogin: false,
+        isAdmin: false
+      });
       localStorage.removeItem('jwt_token');
     },
 
@@ -287,9 +300,12 @@ export const useUserStore = defineStore('user', {
           localStorage.setItem('jwt_token', token);
           
           // 更新store状态
-          this.userInfo = userInfo;
-          this.token = token;
-          this.isLogin = true;
+          this.$patch({
+            userInfo,
+            token,
+            isAdmin: Boolean(userInfo?.is_admin),
+            isLogin: true
+          });
           
           console.log('注册成功，已保存用户信息和token');
           return {
