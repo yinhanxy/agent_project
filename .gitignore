@@ -95,8 +95,11 @@ ehthumbs_vista.db
 Dockerfile
 .dockerignore
 
-# Claude Code 本地配置与 skills（不进仓库）
+# Local agent/Codex configuration, skills, and worktrees
 .claude/
+.codex/
+.Codex/
+.agents/
 docs/superpowers/
 
 # 面试/简历相关 markdown（个人材料，不推到公共仓库）
