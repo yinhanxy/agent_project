@@ -92,7 +92,7 @@ const routes = [
     component: () => import('../views/AccountManagement.vue'),
     meta: {
       title: '账号管理',
-      keepAlive: false
+      keepAlive: true
     }
   },
 ]

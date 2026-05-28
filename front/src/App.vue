@@ -1,12 +1,14 @@
 <template>
   <div class="app">
     <router-view v-slot="{ Component }">
-      <!-- keep-alive 容器始终存在：切到 keepAlive:false 的页面（如账号管理）时
-           不会销毁缓存，AIChat 等被缓存的页面切回时仍能保留状态 -->
-      <keep-alive>
-        <component :is="Component" v-if="$route.meta.keepAlive" />
-      </keep-alive>
-      <component :is="Component" v-if="!$route.meta.keepAlive" />
+      <template v-if="$route.meta.keepAlive">
+        <keep-alive>
+          <component :is="Component" />
+        </keep-alive>
+      </template>
+      <template v-else>
+        <component :is="Component" />
+      </template>
     </router-view>
   </div>
 </template>

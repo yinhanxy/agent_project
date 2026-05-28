@@ -78,7 +78,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onActivated } from 'vue'
 import { showToast, showConfirmDialog } from 'vant'
 import axios from 'axios'
 import TabBar from '../components/TabBar.vue'
@@ -143,7 +143,8 @@ const toggleAdmin = async (u) => {
   }
 }
 
-onMounted(loadUsers)
+// 页面已开启 keep-alive：用 onActivated 保证每次进入都刷新用户列表（首次挂载也会触发）
+onActivated(loadUsers)
 </script>
 
 <style scoped>
