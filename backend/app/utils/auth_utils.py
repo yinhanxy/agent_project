@@ -4,6 +4,7 @@ from typing import Optional, Dict, Any
 import requests
 from dotenv import load_dotenv
 from jose import JWTError, jwt
+import redis.asyncio as aioredis
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -18,6 +19,19 @@ ALGORITHM = os.getenv("ALGORITHM")
 
 # 创建Bearer认证方案
 security = HTTPBearer()
+
+# Token 黑名单连接：Django 用其默认 RedisCache 把已吊销的 jti 写到 :1:blacklist:{jti}，
+# 默认落在 Redis DB1（REDIS_CACHE_URL=.../1）。这里用独立连接精确查这个 key，
+# 既修复了此前 FastAPI 连 DB3 永远查不到（黑名单形同虚设）的问题，也替掉了 O(N) 的 KEYS 全库扫描。
+_BLACKLIST_REDIS_URL = os.getenv("REDIS_BLACKLIST_URL", "redis://127.0.0.1:6379/1")
+_blacklist_redis = None
+
+
+def _get_blacklist_redis():
+    global _blacklist_redis
+    if _blacklist_redis is None:
+        _blacklist_redis = aioredis.from_url(_BLACKLIST_REDIS_URL, decode_responses=True)
+    return _blacklist_redis
 
 
 def decode_django_jwt(token: str) -> Optional[Dict[str, Any]]:
@@ -58,26 +72,29 @@ async def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depend
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # 检查JWT是否在黑名单中
+    # 强制要求 jti 与 exp：缺失一律拒绝。正常 Django 签发的 token 都带这两项；
+    # 拒绝无 jti 的 token，同时堵住"无 jti 直接绕过黑名单检查"的问题。
     jti = payload.get("jti")
-    logger.info(f"【debug】 检查JWT是否在黑名单中，jti: {jti}", extra={"path": "auth_utils.get_current_user_id"})
-    if jti:
-        redis_client = await connect_redis()
-        # 使用通配符查询所有可能的黑名单键格式
-        # 匹配任何前缀的blacklist键，如:1:blacklist:{jti}、blacklist:{jti}等
-        wildcard_pattern = f"*blacklist:{jti}"
-        
-        # 获取所有匹配的键
-        matching_keys = await redis_client.keys(wildcard_pattern)
-        logger.info(f"【debug】 检查JWT是否在黑名单中，匹配的键: {matching_keys}", extra={"path": "auth_utils.get_current_user_id"})
-        
-        # 如果有匹配的键，说明JWT在黑名单中
-        if matching_keys:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token has been revoked",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+    if not jti or not payload.get("exp"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token claims",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # 黑名单检查：精确查 Django 写入的 :1:blacklist:{jti}，用 EXISTS（O(1)，不再 KEYS 扫全库）
+    try:
+        revoked = await _get_blacklist_redis().exists(f":1:blacklist:{jti}")
+    except Exception as e:
+        # Redis 不可用时放行（可用性优先，与限流降级一致），记 warning
+        logger.warning(f"[auth] 黑名单检查 Redis 不可用，放行: {e}", extra={"path": "auth_utils.get_current_user_id"})
+        revoked = 0
+    if revoked:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     # 从Django JWT中提取user_id（uuid）
     user_id: str = payload.get("user_id")
