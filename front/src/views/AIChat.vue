@@ -96,7 +96,8 @@
             >
               <van-loading v-if="message.streaming" size="13" />
               <van-icon v-else name="balance-o" size="11" />
-              <span v-if="message.tokens != null">{{ message.tokens }} tokens</span>
+              <span v-if="message.elapsed != null">{{ message.elapsed.toFixed(1) }}s</span>
+              <span v-if="message.tokens != null">· {{ message.tokens }} tokens</span>
             </div>
           </div>
         </div>
@@ -131,7 +132,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick, watch } from 'vue';
+import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import TabBar from '../components/TabBar.vue';
 import { showToast } from 'vant';
@@ -198,6 +199,23 @@ const formatMessage = (content) => {
   }
 };
 
+// 生成耗时实时计时器（同一时刻只有最后一条回答在流式）
+let tickTimer = null;
+const stopTick = () => {
+  if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+};
+const startTick = (msg) => {
+  stopTick();
+  tickTimer = setInterval(() => {
+    if (msg && msg.streaming) {
+      msg.elapsed = (Date.now() - msg.startTime) / 1000;
+    } else {
+      stopTick();
+    }
+  }, 100);
+};
+onUnmounted(stopTick);
+
 // 发送消息
 const sendMessage = async () => {
   if (!userInput.value.trim() || isLoading.value) return;
@@ -216,8 +234,10 @@ const sendMessage = async () => {
   userInput.value = '';
   
   // 添加AI消息占位
-  messages.value.push({ role: 'assistant', content: '', citations: [], showCitations: false, usedRag: false, tokens: null, streaming: true });
-  
+  messages.value.push({ role: 'assistant', content: '', citations: [], showCitations: false, usedRag: false, tokens: null, streaming: true, startTime: Date.now(), elapsed: 0 });
+  // 启动实时计时（拿响应式代理引用，保证 elapsed 变化能触发更新）
+  startTick(messages.value[messages.value.length - 1]);
+
   // 滚动到底部
   await nextTick();
   scrollToBottom();
@@ -232,9 +252,13 @@ const sendMessage = async () => {
     messages.value[messages.value.length - 1].content = `发生错误: ${error.message || '请检查网络连接和API设置'}`;
   } finally {
     isLoading.value = false;
-    // 兜底：无论成功或异常，结束后都停止最后一条消息的转圈
+    // 兜底：停止计时与转圈，并把耗时定格为最终值
+    stopTick();
     const lastMsg = messages.value[messages.value.length - 1];
-    if (lastMsg && lastMsg.role === 'assistant') lastMsg.streaming = false;
+    if (lastMsg && lastMsg.role === 'assistant') {
+      lastMsg.streaming = false;
+      if (lastMsg.startTime) lastMsg.elapsed = (Date.now() - lastMsg.startTime) / 1000;
+    }
     await nextTick();
     scrollToBottom();
   }
