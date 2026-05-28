@@ -55,6 +55,14 @@ def _estimate_messages_tokens(messages: list) -> int:
     return total
 
 
+def _max_tool_rounds() -> int:
+    """工具调用循环的最大轮数上限（防止模型持续请求工具导致无限循环/烧 token）。"""
+    try:
+        return max(1, int(os.getenv("AGENT_MAX_TOOL_ROUNDS", "8")))
+    except (TypeError, ValueError):
+        return 8
+
+
 class AgentLoop:
     """
     自实现的 Tool Calling Agent 循环。
@@ -130,13 +138,16 @@ class AgentLoop:
         steps = []
         on_agent_start(messages)
 
-        while True:
+        max_rounds = _max_tool_rounds()
+        for round_idx in range(max_rounds + 1):
             on_model_call(messages)
+            # 最后一轮禁用工具，强制模型给出文字答复，保证循环必然终止
+            last_round = round_idx == max_rounds
             response = await self.client.chat.completions.create(
                 model=self._model_name(),
                 messages=messages,
                 tools=self.tool_schemas,
-                tool_choice="auto",
+                tool_choice="none" if last_round else "auto",
             )
             msg = response.choices[0].message
             on_model_response(bool(msg.tool_calls), len(msg.content or ""))
@@ -165,6 +176,11 @@ class AgentLoop:
                     "content": result,
                 })
 
+        # 兜底：达到工具调用上限仍未给出文字答复
+        fallback = "（已达到工具调用次数上限，请重试或换个问法）"
+        on_agent_end(fallback, steps)
+        return {"response": fallback, "steps": steps}
+
     # ── 流式执行 ──────────────────────────────────────────────────────────────
 
     @traceable
@@ -186,8 +202,11 @@ class AgentLoop:
 
         committed_tokens = 0  # 已完成各轮 LLM 调用的精确 total_tokens 之和
 
-        while True:
+        max_rounds = _max_tool_rounds()
+        for round_idx in range(max_rounds + 1):
             on_model_call(messages)
+            # 最后一轮禁用工具，强制模型输出文字答复，保证循环必然终止
+            last_round = round_idx == max_rounds
             prompt_est = _estimate_messages_tokens(messages)
             # 思考期先发一个初始估算（已消耗的输入 token），让前端立刻有数字开始增长
             yield {"type": "usage", "tokens": committed_tokens + prompt_est, "estimated": True}
@@ -195,7 +214,7 @@ class AgentLoop:
                 model=self._model_name(),
                 messages=messages,
                 tools=self.tool_schemas,
-                tool_choice="auto",
+                tool_choice="none" if last_round else "auto",
                 stream=True,
                 stream_options={"include_usage": True},
             )
