@@ -4,7 +4,7 @@ SmartTextSplitter —— 三策略智能切片器
 策略选择：
   fixed        固定大小 + 重叠（兜底）
   semantic     先按文档结构边界切（Markdown 标题 / 编号章节），再 fixed 细切
-  parent_child 两级切片：大父块存 MySQL，小子块存 ChromaDB，检索时子→父扩展
+  parent_child 两级切片：大父块存 MySQL，小子块存向量库，检索时子→父扩展
 
 语言适配：
   自动统计中文字符占比，>15% 视为中文，使用中文友好参数和分隔符。
@@ -155,7 +155,7 @@ class SmartTextSplitter:
         子块：较小，供向量检索精准召回。
 
         返回 (child_docs, parent_docs)：
-          - child_docs  → 存入 ChromaDB（含 parent_id 元数据）
+          - child_docs  → 存入向量库（含 parent_id 元数据）
           - parent_docs → 存入 MySQL parent_chunks 表
         """
         if not docs:

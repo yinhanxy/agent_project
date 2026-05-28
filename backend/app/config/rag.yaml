@@ -1,6 +1,11 @@
-# 注意：此文件已不再使用，模型配置已迁移到 .env 文件
-# 请在 .env 文件中配置以下变量：
-# - CHAT_MODEL_NAME: 阿里云聊天模型名称
-# - OLLAMA_CHAT_MODEL_NAME: Ollama聊天模型名称  
-# - TEXT_EMBEDDING_MODEL_NAME: 嵌入模型名称
-# - RERANKER_MODEL_NAME: 重排序模型名称
+# RAG 通用配置（与向量库后端无关）
+# 每次召回的子块数量（父子模式下实际返回父块数 ≤ k）
+k: 5
+
+data_path: data
+allow_knowledge_file_types: ["txt", "pdf", "md", "docx", "pptx"]
+
+# ── 切片参数（SmartTextSplitter 动态按语言选取，以下为参考默认值）──────────
+# 中文：child_size=150  parent_size=800  fixed_size=500
+# 英文：child_size=300  parent_size=1500 fixed_size=800
+# separators 由 SmartTextSplitter 按语言自动选择，无需在此配置

@@ -31,7 +31,7 @@ from app.rag.vector_backend import build_backend
 from app.services.document_service import document_service
 from app.services.parent_chunk_service import parent_chunk_service
 from app.services.child_chunk_service import child_chunk_service
-from app.utils.config import chroma_config
+from app.utils.config import rag_config
 from app.utils.factory import embed_model
 from app.utils.file_handler import (
     pdf_loader, txt_loader, listdir_allowed_type,
@@ -58,13 +58,13 @@ class VectorStoreService:
             return None
         return BM25Retriever.from_documents(
             documents=docs,
-            k=chroma_config["k"],
+            k=rag_config["k"],
             preprocess_func=_bm25_preprocess,
         )
 
     async def get_retriever(self, query: str = None, filter_meta: dict = None):
         vector_retriever = await self.backend.as_retriever(
-            k=chroma_config["k"],
+            k=rag_config["k"],
             filter_meta=filter_meta,
         )
         bm25_retriever = await self.get_bm25_retriever(filter_meta=filter_meta)
@@ -162,8 +162,8 @@ class VectorStoreService:
                 file_paths.append((tmp.name, file.filename, len(content)))
         else:
             allowed = await listdir_allowed_type(
-                chroma_config["data_path"],
-                tuple(chroma_config["allow_knowledge_file_types"]),
+                rag_config["data_path"],
+                tuple(rag_config["allow_knowledge_file_types"]),
             )
             for p in allowed:
                 file_paths.append((p, os.path.basename(p), 0))

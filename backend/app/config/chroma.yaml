@@ -1,12 +1,4 @@
+# ChromaDB 后端专用配置（VECTOR_STORE_BACKEND=chroma 时生效）
+# 通用 RAG 参数（k / data_path / allow_knowledge_file_types）见 rag.yaml
 collection_name: rag_collection
 persist_directory: data/chromadb
-# 每次召回的子块数量（父子模式下实际返回父块数 ≤ k）
-k: 5
-
-data_path: data
-allow_knowledge_file_types: ["txt", "pdf", "md", "docx", "pptx"]
-
-# ── 切片参数（SmartTextSplitter 动态按语言选取，以下为参考默认值）──────────
-# 中文：child_size=150  parent_size=800  fixed_size=500
-# 英文：child_size=300  parent_size=1500 fixed_size=800
-# separators 由 SmartTextSplitter 按语言自动选择，无需在此配置

@@ -25,7 +25,7 @@ def set_rag_user_id(user_id: str) -> None:
 
 
 async def _build_rag_filter() -> Optional[dict]:
-    """构建当前用户可访问范围的 ChromaDB/BM25 过滤条件"""
+    """构建当前用户可访问范围的向量库/BM25 过滤条件"""
     user_id = _user_id_var.get()
     if not user_id:
         return None

@@ -31,7 +31,7 @@ class MilvusBackend(VectorStoreBackend):
             # 启用 dynamic field，元数据 schema 不固定，避免后续加字段要 alter
             enable_dynamic_field=True,
             index_params={
-                "metric_type": "L2",
+                "metric_type": milvus_config.get("metric_type", "L2"),
                 "index_type": "AUTOINDEX",
                 "params": {},
             },
@@ -50,7 +50,9 @@ class MilvusBackend(VectorStoreBackend):
         search_kwargs: dict = {"k": k}
         expr = dict_to_milvus_expr(filter_meta)
         if expr:
-            # langchain-milvus 的 expr key 名称就是 "expr"
+            # 依赖 langchain-milvus 0.3.x：langchain_core.VectorStoreRetriever 把
+            # search_kwargs 整体 unpack 给 Milvus.similarity_search(query, **kwargs)，
+            # 后者的过滤参数名是 "expr"（不是 "filter"）。升级 langchain-* 后需重测。
             search_kwargs["expr"] = expr
         return self._store.as_retriever(
             search_type="similarity",

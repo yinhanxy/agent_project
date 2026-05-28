@@ -3,6 +3,7 @@ import os
 from app.utils.config_handler import load_config
 from app.utils.path_tool import get_abstract_path
 
+rag_config = load_config(config_path=get_abstract_path('app/config/rag.yaml'))
 chroma_config = load_config(config_path=get_abstract_path('app/config/chroma.yaml'))
 prompt_config = load_config(config_path=get_abstract_path('app/config/prompt.yaml'))
 agent_config = load_config(config_path=get_abstract_path('app/config/agent.yaml'))
@@ -13,6 +14,7 @@ milvus_config["host"] = os.getenv("MILVUS_HOST", milvus_config.get("host", "loca
 milvus_config["port"] = int(os.getenv("MILVUS_PORT", milvus_config.get("port", 19530)))
 
 if __name__ == '__main__':
+    print(rag_config)
     print(chroma_config)
     print(prompt_config)
     print(agent_config)

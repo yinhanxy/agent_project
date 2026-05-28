@@ -20,7 +20,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from app.core.logger_handler import logger
 from app.rag.rag_service import rag_service
 from app.rag.vector_store import VectorStoreService
-from app.utils.config import chroma_config
+from app.utils.config import rag_config
 
 # 系统级上传用 user_id（不属于任何个人用户）
 SYSTEM_USER_ID = "__system__"
@@ -38,7 +38,7 @@ async def folder_watch_job():
         watch_path.mkdir(parents=True, exist_ok=True)
         return
 
-    allowed_exts = set(chroma_config.get("allow_knowledge_file_types", ["txt", "pdf", "md", "docx", "pptx"]))
+    allowed_exts = set(rag_config.get("allow_knowledge_file_types", ["txt", "pdf", "md", "docx", "pptx"]))
     candidates = [
         p for p in watch_path.iterdir()
         if p.is_file() and p.suffix.lstrip(".").lower() in allowed_exts

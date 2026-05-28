@@ -1,7 +1,7 @@
 """
 父块存储服务。
 
-父子检索中，ChromaDB 存小的 child chunk（精准向量检索），
+父子检索中，向量库存小的 child chunk（精准向量检索），
 MySQL 存大的 parent chunk（给 LLM 完整上下文）。
 检索链路：child 命中 → 读 parent_id → 从这里取父块内容。
 """

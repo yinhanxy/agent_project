@@ -73,7 +73,7 @@ class DocumentRecord(Base):
     __tablename__ = "document_records"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    # 文件级唯一 ID，同时作为 ChromaDB 各 chunk 的 file_id 元数据值
+    # 文件级唯一 ID，同时作为向量库各 chunk 的 file_id 元数据值
     doc_id = Column(String(64), unique=True, nullable=False, index=True)
     user_id = Column(String(64), nullable=False, index=True)
     kb_id = Column(String(64), nullable=True, index=True)   # NULL = 个人文档

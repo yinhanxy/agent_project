@@ -3,3 +3,8 @@
 host: localhost
 port: 19530
 collection_name: rag_collection
+
+# 距离度量。可选：L2 / IP / COSINE
+# 注意：当前嵌入模型（qwen3-embedding / Ollama 默认）输出归一化向量，
+# L2 与 COSINE 排序结果等价；切换到非归一化嵌入模型时改成 COSINE 更直观。
+metric_type: L2
