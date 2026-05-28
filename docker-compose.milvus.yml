@@ -64,3 +64,15 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+
+  attu:
+    container_name: rag-milvus-attu
+    image: zilliz/attu:v2.5
+    environment:
+      # 同一 compose 网络内用服务名直连，无需 host.docker.internal
+      MILVUS_URL: milvus:19530
+    ports:
+      - "127.0.0.1:8080:3000"   # 可视化界面，浏览器访问 http://localhost:8080
+    depends_on:
+      milvus:
+        condition: service_healthy
