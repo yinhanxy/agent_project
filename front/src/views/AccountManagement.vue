@@ -25,7 +25,12 @@
       <div class="list-section">
         <div class="section-header">
           <span class="section-title">账号列表</span>
-          <van-button size="small" plain icon="replay" :loading="loading" @click="loadUsers" />
+          <div class="section-actions">
+            <van-button size="small" type="primary" icon="plus" @click="goToRegister">
+              新增账号
+            </van-button>
+            <van-button size="small" plain icon="replay" :loading="loading" @click="loadUsers" />
+          </div>
         </div>
 
         <van-loading v-if="loading" size="24px" vertical style="padding:32px 0">加载中</van-loading>
@@ -79,10 +84,12 @@
 
 <script setup>
 import { ref, computed, onActivated } from 'vue'
+import { useRouter } from 'vue-router'
 import { showToast, showConfirmDialog } from 'vant'
 import axios from 'axios'
 import TabBar from '../components/TabBar.vue'
 
+const router = useRouter()
 const users = ref([])
 const loading = ref(false)
 const toggling = ref(null)
@@ -103,6 +110,10 @@ const selfUuid = computed(() => {
 })
 
 const adminCount = computed(() => users.value.filter(u => u.is_admin).length)
+
+const goToRegister = () => {
+  router.push('/register')
+}
 
 const loadUsers = async () => {
   loading.value = true
@@ -179,4 +190,10 @@ onActivated(loadUsers)
   padding: 8px 4px;
 }
 .section-title { font-size: 14px; font-weight: 500; color: #323233; }
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
 </style>
