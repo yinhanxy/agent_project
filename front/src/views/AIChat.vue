@@ -67,12 +67,7 @@
             </div>
 
             <div class="message-content">
-              <div v-if="message.role === 'assistant' && message.content === ''" class="typing-indicator">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-              <div v-else class="markdown-body" v-html="formatMessage(message.content)"></div>
+              <div class="markdown-body" v-html="formatMessage(message.content)"></div>
             </div>
 
             <div
@@ -96,11 +91,12 @@
             </div>
 
             <div
-              v-if="message.role === 'assistant' && message.tokens != null"
+              v-if="message.role === 'assistant' && (message.streaming || message.tokens != null)"
               class="token-usage"
             >
-              <van-icon name="balance-o" size="11" />
-              <span>{{ message.tokensEstimated ? '约 ' : '' }}{{ message.tokens }} tokens</span>
+              <van-loading v-if="message.streaming" size="13" />
+              <van-icon v-else name="balance-o" size="11" />
+              <span v-if="message.tokens != null">{{ message.tokens }} tokens</span>
             </div>
           </div>
         </div>
@@ -220,7 +216,7 @@ const sendMessage = async () => {
   userInput.value = '';
   
   // 添加AI消息占位
-  messages.value.push({ role: 'assistant', content: '', citations: [], showCitations: false, usedRag: false, tokens: null, tokensEstimated: false });
+  messages.value.push({ role: 'assistant', content: '', citations: [], showCitations: false, usedRag: false, tokens: null, streaming: true });
   
   // 滚动到底部
   await nextTick();
@@ -236,6 +232,9 @@ const sendMessage = async () => {
     messages.value[messages.value.length - 1].content = `发生错误: ${error.message || '请检查网络连接和API设置'}`;
   } finally {
     isLoading.value = false;
+    // 兜底：无论成功或异常，结束后都停止最后一条消息的转圈
+    const lastMsg = messages.value[messages.value.length - 1];
+    if (lastMsg && lastMsg.role === 'assistant') lastMsg.streaming = false;
     await nextTick();
     scrollToBottom();
   }
@@ -328,11 +327,10 @@ const fetchAIResponse = async (userMessage) => {
               }
               break;
             case 'usage': {
-              // 流式 token 估算，实时跳动
+              // 流式 token 估算，实时跳动（转圈期间显示，结束时校准）
               const lastMsg = messages.value[messages.value.length - 1];
               if (lastMsg && lastMsg.role === 'assistant') {
                 lastMsg.tokens = json.tokens;
-                lastMsg.tokensEstimated = true;
               }
               break;
             }
@@ -352,12 +350,12 @@ const fetchAIResponse = async (userMessage) => {
                   lastMsg.citations = json.citations;
                 }
               }
-              // 用精确 token 总数覆盖估算值
-              if (json.tokens != null) {
+              // 结束：停止转圈，用精确 token 总数定格
+              {
                 const lastMsg = messages.value[messages.value.length - 1];
                 if (lastMsg && lastMsg.role === 'assistant') {
-                  lastMsg.tokens = json.tokens;
-                  lastMsg.tokensEstimated = false;
+                  if (json.tokens != null) lastMsg.tokens = json.tokens;
+                  lastMsg.streaming = false;
                 }
               }
               break;
@@ -889,41 +887,6 @@ const loadSessionHistory = (session) => {
   background: #c8d4df;
   color: #ffffff;
   box-shadow: none;
-}
-
-.typing-indicator {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-  min-height: 22px;
-}
-
-.typing-indicator span {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background-color: #8ca0b2;
-  animation: bounce 1.35s infinite ease-in-out;
-}
-
-.typing-indicator span:nth-child(2) {
-  animation-delay: 0.16s;
-}
-
-.typing-indicator span:nth-child(3) {
-  animation-delay: 0.32s;
-}
-
-@keyframes bounce {
-  0%, 70%, 100% {
-    opacity: 0.45;
-    transform: translateY(0);
-  }
-  35% {
-    opacity: 1;
-    transform: translateY(-5px);
-  }
 }
 
 .markdown-body :deep(p) {

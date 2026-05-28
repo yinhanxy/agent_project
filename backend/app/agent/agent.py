@@ -189,6 +189,8 @@ class AgentLoop:
         while True:
             on_model_call(messages)
             prompt_est = _estimate_messages_tokens(messages)
+            # 思考期先发一个初始估算（已消耗的输入 token），让前端立刻有数字开始增长
+            yield {"type": "usage", "tokens": committed_tokens + prompt_est, "estimated": True}
             stream = await self.client.chat.completions.create(
                 model=self._model_name(),
                 messages=messages,
