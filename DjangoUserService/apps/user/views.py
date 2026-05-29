@@ -443,6 +443,30 @@ class UserSetDeptView(AuthenticatedView):
         }, status=status.HTTP_200_OK)
 
 
+class UserSetDeptAdminView(AuthenticatedView):
+    """总管理员：设置/取消某用户的部门管理员身份（须先归属某部门）"""
+
+    def patch(self, request, uuid) -> Response:
+        if not getattr(request.user, 'is_admin', False):
+            return Response({"detail": "无权限"}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            target = User.objects.get(uuid=uuid)
+        except User.DoesNotExist:
+            return Response({"detail": "用户不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        is_dept_admin = bool(request.data.get('is_dept_admin'))
+        if is_dept_admin and not target.dept_id:
+            return Response({"detail": "该用户尚未归属任何部门，无法任命为部门管理员"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        target.is_dept_admin = is_dept_admin
+        target.save()
+        clear_user_cache(target.uuid)
+        return Response({
+            "uuid": str(target.uuid),
+            "is_dept_admin": target.is_dept_admin,
+        }, status=status.HTTP_200_OK)
+
+
 class UserLogOutView(APIView):
     """用户注销"""
     @swagger_auto_schema(
