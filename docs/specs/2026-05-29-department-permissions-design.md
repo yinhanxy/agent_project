@@ -2,7 +2,7 @@
 
 - 日期：2026-05-29
 - 状态：已评审通过，待编写实现计划
-- 范围：横跨 Django 账号服务 与 本 FastAPI 知识库服务 两个代码库
+- 范围：同一 monorepo 内的三个服务——Django 账号服务（`DjangoUserService/`，端口 8001）、FastAPI 知识库服务（`backend/`，端口 8000）、Vue 前端（`front/`，端口 3000）。三者独立运行，但代码在同一 git 仓库，可在一个 worktree 内一并实现、一次合并。
 
 ## 1. 背景与目标
 
@@ -17,7 +17,7 @@
 
 ## 2. 现状与系统边界
 
-- **账号体系在独立的 Django 服务**：JWT 由 Django 签发，本 FastAPI 服务仅解析（`auth_utils.decode_django_jwt`）；用户信息（含 `is_admin`）从 Django API 拉取后缓存到 Redis（`:1:user:{user_id}`）。账号管理接口（`/admin/users`、`set-admin`）全部代理到 Django。
+- **账号体系是独立运行的 Django 服务（端口 8001），代码在本 monorepo 的 `DjangoUserService/`（被同一 git 仓库追踪，非 submodule）**：JWT 由 Django 签发，本 FastAPI 服务仅解析（`auth_utils.decode_django_jwt`）；用户信息（含 `is_admin`）从 Django API 拉取后缓存到 Redis（`:1:user:{user_id}`）。账号管理接口（`/admin/users`、`set-admin`）全部代理到 Django。「服务独立」不等于「仓库独立」——三个服务同仓。
 - **知识库体系在本 FastAPI 服务**，且已有部门雏形：
   - `KnowledgeBase(scope ∈ {personal,dept,company,admin}, dept_id, owner_id)`
   - `KBPermission(kb_id, principal_id, principal_type ∈ {user,dept}, role)`
@@ -64,9 +64,11 @@
 
 ## 5. 数据模型
 
-### Django 侧
-- 新增 `Department` 表：`dept_id`、`name`
-- `User` 增加：`dept_id`（外键，可空，单部门）、`is_dept_admin`（bool）；`is_admin` 继续表示总管理员
+### Django 侧（`DjangoUserService/apps/user/`）
+- 新增 `Department` 模型（`models.py`）：主键 `dept_id`（ShortUUID，与 `User.uuid` 风格一致）、`name`
+- `User` 模型（`db_table='user_service'`）增加：`dept`（外键 → `Department`，`null=True`，单部门归属）、`is_dept_admin`（bool，默认 `False`）；`is_admin` 继续表示总管理员
+- 生成并执行数据库迁移（`makemigrations` + `migrate`）
+> 注：`serializers.py` 顶部注释早已提到 `DepartmentSerializer`，但从未实现——本次正式落地。
 
 ### FastAPI 侧
 - **无需新建用户/部门表**。复用现有 `KnowledgeBase`、`KBPermission`。
@@ -92,6 +94,8 @@ Django 的 `user_info`（`/user/detail/` 返回，FastAPI 经 Redis 缓存）新
 - `is_dept_admin`：新增，是否本部门管理员
 
 角色由这些字段派生：`is_admin → super_admin`；否则 `is_dept_admin → dept_admin`；否则 `member`。
+
+落点：在 `UserSerializer.Meta.fields`（`apps/user/serializers.py`）追加 `dept_id`、`dept_name`（`source='dept.name'`）、`is_dept_admin`，detail（`/user/detail/`）与 list（`/user/list/`）接口复用该序列化器即可返回。
 
 ## 7. FastAPI 实现拆解
 
@@ -121,7 +125,7 @@ Django 的 `user_info`（`/user/detail/` 返回，FastAPI 经 Redis 缓存）新
 - **阶段 2（FastAPI）**：身份提取与传递、`list_accessible_kbs` 纳入本部门库、`_build_rag_filter` 补全、KB 写权限校验、`/rag/query` 补过滤、删死代码。
 - **阶段 3（前端）**：账号管理部门分配、知识库页角色化。
 
-依赖：阶段 2 依赖阶段 1 的接口契约。FastAPI 可先按契约开发，Django 未就绪时身份对象降级为「无部门 + 普通成员」，不阻塞。
+三个服务同在本 monorepo，可在同一 worktree 内一并实现、一次性 fast-forward 合并。阶段 2 逻辑上依赖阶段 1 的接口契约（字段名先定好），实现顺序建议：Django 模型/迁移/序列化器 → FastAPI 消费与隔离 → 前端。身份对象在缺字段时降级为「无部门 + 普通成员」，保证灰度上线与回滚安全。
 
 ## 11. 非目标（YAGNI）
 
