@@ -49,3 +49,25 @@ class UserDetailDeptTest(TestCase):
         self.assertEqual(data["dept_id"], str(self.dept.dept_id))
         self.assertEqual(data["dept_name"], "研发部")
         self.assertTrue(data["is_dept_admin"])
+
+
+class UserListDeptTest(TestCase):
+    def setUp(self):
+        self.dept = Department.objects.create(name="研发部")
+        self.admin = User.objects.create_user(
+            username="admin", email="admin@example.com", password="pass123",
+            status=UserStatusChoice.ACTIVE, is_admin=True,
+        )
+        self.member = User.objects.create_user(
+            username="m1", email="m1@example.com", password="pass123",
+            status=UserStatusChoice.ACTIVE, dept=self.dept, is_dept_admin=True,
+        )
+
+    def test_list_includes_dept_fields(self):
+        resp = _auth_client(self.admin).get("/user/list/")
+        self.assertEqual(resp.status_code, 200)
+        users = resp.json()["users"]
+        target = next(u for u in users if u["username"] == "m1")
+        self.assertEqual(target["dept_id"], str(self.dept.dept_id))
+        self.assertEqual(target["dept_name"], "研发部")
+        self.assertTrue(target["is_dept_admin"])

@@ -330,7 +330,7 @@ class UserListView(AuthenticatedView):
     def get(self, request) -> Response:
         if not getattr(request.user, 'is_admin', False):
             return Response({"detail": "无权限"}, status=status.HTTP_403_FORBIDDEN)
-        users = User.objects.all().order_by('date_joined')
+        users = User.objects.select_related('dept').all().order_by('date_joined')
         data = []
         for u in users:
             data.append({
@@ -339,6 +339,9 @@ class UserListView(AuthenticatedView):
                 "email": u.email,
                 "telephone": u.telephone,
                 "is_admin": u.is_admin,
+                "dept_id": str(u.dept_id) if u.dept_id else None,
+                "dept_name": u.dept.name if u.dept_id else None,
+                "is_dept_admin": u.is_dept_admin,
                 "status": u.status,
                 "date_joined": u.date_joined.isoformat() if u.date_joined else None,
                 "last_login": u.last_login.isoformat() if u.last_login else None,
