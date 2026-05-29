@@ -25,6 +25,12 @@ const route = useRoute()
 const wideRoutePrefixes = ['/aichat', '/sessions', '/knowledge', '/my', '/settings', '/admin/accounts']
 const isWideRoute = computed(() => wideRoutePrefixes.some(prefix => route.path.startsWith(prefix)))
 
+// 服务/页面重新加载后不沿用上次登录态；同一次 SPA 运行期间不重复清理，避免 HMR 误登出。
+if (!window.__AUTH_BOOTSTRAP_CLEARED__) {
+  userStore.clearAuth()
+  window.__AUTH_BOOTSTRAP_CLEARED__ = true
+}
+
 // 应用启动时拉取管理员状态，解决刷新后状态丢失
 onMounted(async () => {
   const token = localStorage.getItem('jwt_token')

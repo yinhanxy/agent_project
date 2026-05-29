@@ -100,6 +100,8 @@ export const useUserStore = defineStore('user', {
         });
         // 从localStorage中清除token
         localStorage.removeItem('jwt_token');
+        localStorage.removeItem('user-store');
+        localStorage.removeItem('user');
       }
     },
     
@@ -263,6 +265,8 @@ export const useUserStore = defineStore('user', {
         isAdmin: false
       });
       localStorage.removeItem('jwt_token');
+      localStorage.removeItem('user-store');
+      localStorage.removeItem('user');
     },
 
     // 用户注册
