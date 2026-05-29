@@ -11,7 +11,7 @@ from app.agent.agent_middleware import (
     on_tool_call, on_tool_result,
     on_model_call, on_model_response,
 )
-from app.agent.agent_tools import TOOLS, TOOL_SCHEMAS, get_rag_citations, set_rag_user_id
+from app.agent.agent_tools import TOOLS, TOOL_SCHEMAS, get_rag_citations
 from app.core.logger_handler import logger
 from app.services import session_manager as sm
 from app.utils.prompt_loader import load_prompt
@@ -128,12 +128,16 @@ class AgentLoop:
 
     # ── 工具执行 ──────────────────────────────────────────────────────────────
 
-    async def _execute_tool(self, name: str, arguments: str) -> str:
+    async def _execute_tool(self, name: str, arguments: str, user_id: str = "") -> str:
         tool_fn = self.tools.get(name)
         if tool_fn is None:
             return f"工具 {name} 不存在"
         try:
             args = json.loads(arguments) if arguments.strip() else {}
+            # rag_summary_tools 需要请求级身份做权限过滤，由调用方显式注入 user_id
+            # （不走 ContextVar，避免跨异步生成器边界丢值导致越权检索）
+            if name == "rag_summary_tools":
+                args["user_id"] = user_id
             return str(await tool_fn(**args))
         except Exception as e:
             logger.error(f"[Tool] {name} 执行异常: {e}", exc_info=True)
@@ -195,7 +199,7 @@ class AgentLoop:
 
     @traceable
     async def stream(
-        self, query: str, history: list = None
+        self, query: str, history: list = None, user_id: str = ""
     ) -> AsyncGenerator[dict, None]:
         """
         真 token 级流式执行。
@@ -211,6 +215,7 @@ class AgentLoop:
         on_agent_start(messages)
 
         committed_tokens = 0  # 已完成各轮 LLM 调用的精确 total_tokens 之和
+        collected_citations: list = []  # 工具执行时同步固化的结构化引用
 
         max_rounds = _max_tool_rounds()
         for round_idx in range(max_rounds + 1):
@@ -296,8 +301,15 @@ class AgentLoop:
             # 顺序执行各工具
             for tc in tool_calls_buf.values():
                 on_tool_call(tc["name"], tc["args"])
-                result = await self._execute_tool(tc["name"], tc["args"])
+                result = await self._execute_tool(tc["name"], tc["args"], user_id)
                 on_tool_result(tc["name"], result)
+
+                # 紧邻工具执行点同步读取 citations 并固化到局部变量；
+                # 此处与工具内 set() 处于同一执行段（无 yield/无新 task），ContextVar 可靠
+                if tc["name"] == "rag_summary_tools":
+                    cites = get_rag_citations()
+                    if cites:
+                        collected_citations = cites
 
                 step = {
                     "tool": tc["name"],
@@ -314,7 +326,7 @@ class AgentLoop:
                 })
 
         on_agent_end("", steps)
-        yield {"type": "done", "steps": steps, "tokens": committed_tokens}
+        yield {"type": "done", "steps": steps, "tokens": committed_tokens, "citations": collected_citations}
 
 
 # ── 全局单例（实例无状态，多请求安全复用）────────────────────────────────────
@@ -341,7 +353,6 @@ async def get_agent_stream_response(
 ) -> AsyncGenerator[str, None]:
     """SSE 流式调用，yield Server-Sent Events 格式字符串"""
     history = await sm.session_manager.get_history(session_id, user_id)
-    set_rag_user_id(user_id)
     logger.info(f"[Agent流式] 开始 user={user_id} session={session_id}")
 
     # 初始帧：告知客户端 session_id
@@ -350,8 +361,9 @@ async def get_agent_stream_response(
     full_response: list[str] = []
     steps: list = []
     total_tokens = 0
+    citations: list = []
 
-    async for event in agent_loop.stream(query, history):
+    async for event in agent_loop.stream(query, history, user_id=user_id):
         if event["type"] == "token":
             full_response.append(event["data"])
             yield f"data: {json.dumps({'type': 'response', 'content': event['data']}, ensure_ascii=False)}\n\n"
@@ -362,10 +374,10 @@ async def get_agent_stream_response(
         elif event["type"] == "done":
             steps = event["steps"]
             total_tokens = event.get("tokens", 0)
+            citations = event.get("citations", [])
 
     response = "".join(full_response) or "抱歉，我无法理解您的请求。"
     await sm.session_manager.add_message(session_id, user_id, query, response)
 
-    citations = get_rag_citations()
     yield f"data: {json.dumps({'type': 'done', 'session_id': session_id, 'citations': citations, 'tokens': total_tokens}, ensure_ascii=False)}\n\n"
     logger.info(f"[Agent流式] 完成 session={session_id} steps={len(steps)} citations={len(citations)} tokens={total_tokens}")

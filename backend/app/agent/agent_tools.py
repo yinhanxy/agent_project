@@ -8,26 +8,22 @@ from app.rag.reorder_service import reorder_service
 from app.services.kb_service import kb_service
 from app.utils.auth_utils import decode_django_jwt
 
-# 每次 rag_summary_tools 调用后，将 citations 存入此 ContextVar
-# 供 get_agent_stream_response 在 done 事件中读取
+# rag_summary_tools 调用后把结构化 citations 存入此 ContextVar，
+# 由 AgentLoop.stream 在「工具执行紧邻处」同步读取并固化进事件流传出。
+# 切勿在 SSE 生成器主体（get_agent_stream_response）里跨异步生成器边界读取：
+# ContextVar 在 async generator / @traceable 边界上不可靠传播，会读到空值，
+# 这正是此前「参考来源」一直为空的根因。
 _citations_var: ContextVar[list] = ContextVar("rag_citations", default=[])
-
-# 当前请求的 user_id，由 get_agent_stream_response 在调用前设置
-_user_id_var: ContextVar[str] = ContextVar("rag_user_id", default="")
 
 
 def get_rag_citations() -> list:
     return _citations_var.get()
 
 
-def set_rag_user_id(user_id: str) -> None:
-    _user_id_var.set(user_id)
-
-
-async def _build_rag_filter() -> Optional[dict]:
+async def _build_rag_filter(user_id: str) -> Optional[dict]:
     """构建当前用户可访问范围的向量库/BM25 过滤条件"""
-    user_id = _user_id_var.get()
     if not user_id:
+        logger.warning("[rag_summary_tools] 未拿到 user_id，本次检索不做用户隔离过滤")
         return None
     accessible_kbs = await kb_service.list_accessible_kbs(user_id)
     accessible_kb_ids = [kb["kb_id"] for kb in accessible_kbs]
@@ -43,8 +39,9 @@ async def _build_rag_filter() -> Optional[dict]:
 
 # ── Tool implementations ─────────────────────────────────────────────────────
 
-async def rag_summary_tools(query: str) -> str:
-    filter_meta = await _build_rag_filter()
+async def rag_summary_tools(query: str, user_id: str = "") -> str:
+    logger.info(f"[rag_summary_tools] user_id={user_id or '<空>'}")
+    filter_meta = await _build_rag_filter(user_id)
     result = await rag_service.get_documents_and_summary(query, filter_meta=filter_meta)
     summary = result.get("summary", "")
     citations = result.get("citations", [])
