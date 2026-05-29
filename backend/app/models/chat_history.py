@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, UniqueConstraint
+from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship, declarative_base
 from sqlalchemy.sql import func
 import uuid
@@ -14,6 +14,8 @@ class ChatSession(Base):
 
     title = Column(String(255), default="新的对话")
     metadata_ = Column(JSON, name="metadata")  # metadata 是 SQL 保留字，加下划线
+    archived = Column(Boolean, nullable=False, default=False, server_default="0", index=True)
+    archived_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

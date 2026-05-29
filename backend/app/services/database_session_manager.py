@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 
 from app.db.db_config import AsyncSessionLocal
@@ -149,6 +150,39 @@ class DatabaseSessionManager:
                 await db.commit()
                 logger.info(f"【数据库会话管理】会话 {session_id} 已清除，属于用户: {user_id}")
 
+    async def set_session_archived(self, session_id: str, user_id: str, archived: bool) -> Dict:
+        """设置会话归档状态"""
+        async with AsyncSessionLocal() as db:
+            session = await db.run_sync(
+                lambda session: session.query(ChatSession).filter(
+                    ChatSession.id == session_id,
+                    ChatSession.user_id == user_id
+                ).first()
+            )
+
+            if not session:
+                from fastapi import HTTPException, status
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="会话不存在"
+                )
+
+            session.archived = archived
+            session.archived_at = datetime.utcnow() if archived else None
+            await db.commit()
+            await db.refresh(session)
+            logger.info(
+                f"【数据库会话管理】会话 {session_id} 归档状态更新为 {archived}，属于用户: {user_id}"
+            )
+            return {
+                "id": session.id,
+                "title": session.title,
+                "archived": session.archived,
+                "archived_at": session.archived_at.isoformat() if session.archived_at else None,
+                "created_at": session.created_at.isoformat() if session.created_at else None,
+                "updated_at": session.updated_at.isoformat() if session.updated_at else None
+            }
+
     async def get_all_session_ids(self, user_id: Optional[str] = None) -> List[str]:
         """获取所有会话 ID，如果提供了 user_id，则只返回该用户的会话"""
         async with AsyncSessionLocal() as db:
@@ -162,16 +196,21 @@ class DatabaseSessionManager:
                 )
             return [session.id for session in sessions]
 
-    async def get_user_sessions(self, user_id: str) -> List[Dict]:
+    async def get_user_sessions(self, user_id: str, archived: bool = False) -> List[Dict]:
         """获取用户所有会话详细信息"""
         async with AsyncSessionLocal() as db:
             sessions = await db.run_sync(
-                lambda session: session.query(ChatSession).filter(ChatSession.user_id == user_id).all()
+                lambda session: session.query(ChatSession).filter(
+                    ChatSession.user_id == user_id,
+                    ChatSession.archived == archived
+                ).order_by(ChatSession.updated_at.desc(), ChatSession.created_at.desc()).all()
             )
             return [
                 {
                     "id": session.id,
                     "title": session.title,
+                    "archived": session.archived,
+                    "archived_at": session.archived_at.isoformat() if session.archived_at else None,
                     "created_at": session.created_at.isoformat() if session.created_at else None,
                     "updated_at": session.updated_at.isoformat() if session.updated_at else None
                 }

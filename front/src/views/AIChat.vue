@@ -40,6 +40,25 @@
         <input v-model="sessionSearch" type="search" placeholder="搜索会话" />
       </label>
 
+      <div class="history-segment" aria-label="会话范围">
+        <button
+          class="history-segment-button"
+          :class="{ active: !showArchivedSessions }"
+          type="button"
+          @click="switchSessionArchiveView(false)"
+        >
+          最近
+        </button>
+        <button
+          class="history-segment-button"
+          :class="{ active: showArchivedSessions }"
+          type="button"
+          @click="switchSessionArchiveView(true)"
+        >
+          归档
+        </button>
+      </div>
+
       <div v-if="!isLoggedIn" class="history-empty">
         <van-icon name="contact-o" size="28" />
         <strong>未登录</strong>
@@ -53,8 +72,8 @@
 
       <div v-else-if="sessionStore.sessions.length === 0" class="history-empty">
         <van-icon name="chat-o" size="28" />
-        <strong>暂无会话</strong>
-        <span>开始一次新对话</span>
+        <strong>{{ showArchivedSessions ? '暂无归档' : '暂无会话' }}</strong>
+        <span>{{ showArchivedSessions ? '归档后的会话会显示在这里' : '开始一次新对话' }}</span>
       </div>
 
       <div v-else class="history-list">
@@ -314,15 +333,18 @@ const sessionId = ref('');
 const hasJumped = ref(false);
 const showSessionActions = ref(false);
 const actionSession = ref(null);
+const showArchivedSessions = ref(false);
 
 const router = useRouter();
 const route = useRoute();
 const userStore = useUserStore();
 const sessionStore = useSessionStore();
-const sessionActionOptions = [
-  { name: '归档', value: 'archive' },
+const sessionActionOptions = computed(() => [
+  showArchivedSessions.value
+    ? { name: '取消归档', value: 'unarchive' }
+    : { name: '归档', value: 'archive' },
   { name: '删除', value: 'delete', color: '#d74d42' }
-];
+]);
 
 const isLoggedIn = computed(() => Boolean(localStorage.getItem('jwt_token') || userStore.token));
 const latestCitations = computed(() => {
@@ -620,8 +642,15 @@ const loadSidebarSessions = async () => {
 
   const userId = getUserId();
   if (userId) {
-    await sessionStore.getUserSessions(userId);
+    await sessionStore.getUserSessions(userId, { archived: showArchivedSessions.value });
   }
+};
+
+const switchSessionArchiveView = async (archived) => {
+  if (showArchivedSessions.value === archived) return;
+  showArchivedSessions.value = archived;
+  sessionSearch.value = '';
+  await loadSidebarSessions();
 };
 
 const createNewChat = () => {
@@ -647,12 +676,32 @@ const onSessionAction = async (action) => {
   if (!actionSession.value?.session_id) return;
 
   if (action.value === 'archive' || action.name === '归档') {
-    showToast('归档功能待接入');
+    await updateSessionArchiveState(actionSession.value, true);
+    return;
+  }
+
+  if (action.value === 'unarchive' || action.name === '取消归档') {
+    await updateSessionArchiveState(actionSession.value, false);
     return;
   }
 
   if (action.value === 'delete' || action.name === '删除') {
     await deleteSessionFromHistory(actionSession.value);
+  }
+};
+
+const updateSessionArchiveState = async (session, archived) => {
+  const result = await sessionStore.setSessionArchived(session.session_id, archived);
+  if (result.success) {
+    showToast(archived ? '会话已归档' : '会话已取消归档');
+    if (archived && session.session_id === sessionId.value) {
+      sessionStore.requestNewChat();
+      resetChatState();
+      router.push('/aichat');
+    }
+    await loadSidebarSessions();
+  } else {
+    showToast(result.message || '操作失败');
   }
 };
 
@@ -991,6 +1040,34 @@ const loadSessionHistory = (session) => {
 
 .history-search input::placeholder {
   color: #9aa8b4;
+}
+
+.history-segment {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding: 4px;
+  border: 1px solid #d9e4ec;
+  border-radius: 12px;
+  background: #edf3f8;
+}
+
+.history-segment-button {
+  min-height: 32px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #667486;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.history-segment-button.active {
+  background: #ffffff;
+  color: var(--primary);
+  box-shadow: 0 6px 18px rgba(30, 82, 140, 0.1);
 }
 
 .history-list {

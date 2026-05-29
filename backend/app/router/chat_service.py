@@ -87,13 +87,16 @@ class ChatService:
     async def handle_delete_session(self, session_id: str, user_id: str) -> None:
         await sm.session_manager.clear_session(session_id, user_id)
 
+    async def handle_archive_session(self, session_id: str, user_id: str, archived: bool) -> Dict:
+        return await sm.session_manager.set_session_archived(session_id, user_id, archived)
+
     async def handle_get_all_sessions(self) -> List[str]:
         return await sm.session_manager.get_all_session_ids()
 
-    async def handle_get_user_sessions(self, user_id: str, current_user_id: str) -> List[Dict]:
+    async def handle_get_user_sessions(self, user_id: str, current_user_id: str, archived: bool = False) -> List[Dict]:
         if user_id != current_user_id:
             raise HTTPException(status_code=403, detail="Forbidden")
-        return await sm.session_manager.get_user_sessions(user_id)
+        return await sm.session_manager.get_user_sessions(user_id, archived=archived)
 
     # ── 知识库：上传 ──────────────────────────────────────────────────────────
 

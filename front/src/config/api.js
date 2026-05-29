@@ -31,6 +31,7 @@ export const apiConfig = {
     // 会话管理
     getSession: '/api/session/',
     deleteSession: '/api/session/',
+    archiveSession: '/api/session/',
     getAllSessions: '/api/sessions',
     getUserSessions: '/api/sessions',
     

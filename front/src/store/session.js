@@ -20,12 +20,14 @@ export const useSessionStore = defineStore('session', {
   
   actions: {
     // 获取用户的所有会话
-    async getUserSessions(userId) {
+    async getUserSessions(userId, options = {}) {
       try {
         this.loading = true;
         const token = localStorage.getItem('jwt_token');
+        const archived = Boolean(options.archived);
         
         const response = await axios.get(`${apiConfig.endpoints.getUserSessions}/${userId}`, {
+          params: { archived },
           headers: {
             Authorization: `Bearer ${token}`
           }
@@ -38,6 +40,8 @@ export const useSessionStore = defineStore('session', {
         this.sessions = sessionsData.map(session => ({
           session_id: session.id,
           title: session.title,
+          archived: Boolean(session.archived),
+          archived_at: session.archived_at,
           created_at: session.created_at,
           updated_at: session.updated_at
         }));
@@ -59,6 +63,40 @@ export const useSessionStore = defineStore('session', {
         return {
           success: false,
           message: error.response?.data?.detail || '获取会话失败'
+        };
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    // 归档 / 取消归档会话
+    async setSessionArchived(sessionId, archived) {
+      try {
+        this.loading = true;
+        const token = localStorage.getItem('jwt_token');
+
+        const response = await axios.patch(`${apiConfig.endpoints.archiveSession}${sessionId}/archive`, null, {
+          params: { archived },
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+
+        const sessionData = response.data.data || response.data;
+        if (Array.isArray(this.sessions)) {
+          this.sessions = this.sessions.filter(session => session.session_id !== sessionId);
+        }
+
+        return {
+          success: true,
+          data: sessionData,
+          message: archived ? '会话已归档' : '会话已取消归档'
+        };
+      } catch (error) {
+        console.error('更新会话归档状态失败:', error);
+        return {
+          success: false,
+          message: error.response?.data?.detail || '更新会话归档状态失败'
         };
       } finally {
         this.loading = false;

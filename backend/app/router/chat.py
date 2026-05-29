@@ -5,7 +5,7 @@ import os
 
 import requests
 from fastapi.routing import APIRouter
-from fastapi import UploadFile, File, Depends, HTTPException
+from fastapi import UploadFile, File, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -120,6 +120,19 @@ async def delete_session(session_id: str, user_id: str = Depends(get_current_use
     await router_service.handle_delete_session(session_id, user_id)
     return success_response(message=f"Session {session_id} deleted successfully")
 
+
+@chat_router.patch("/session/{session_id}/archive")
+async def archive_session(
+    session_id: str,
+    archived: bool = Query(True, description="true=归档，false=取消归档"),
+    user_id: str = Depends(get_current_user_id),
+    router_service: ChatService = Depends(get_router_service)
+):
+    """归档或取消归档会话"""
+    session = await router_service.handle_archive_session(session_id, user_id, archived)
+    message = "会话已归档" if archived else "会话已取消归档"
+    return success_response(data=session, message=message)
+
 @chat_router.get("/sessions")
 async def get_all_sessions(
     is_admin: bool = Depends(get_current_user_is_admin),
@@ -134,9 +147,14 @@ async def get_all_sessions(
 
 
 @chat_router.get("/sessions/{user_id}")
-async def get_user_sessions(user_id: str, current_user_id: str = Depends(get_current_user_id), router_service: ChatService = Depends(get_router_service)):
+async def get_user_sessions(
+    user_id: str,
+    archived: bool = Query(False, description="是否返回归档会话"),
+    current_user_id: str = Depends(get_current_user_id),
+    router_service: ChatService = Depends(get_router_service)
+):
     """获取用户所有会话ID"""
-    session_ids = await router_service.handle_get_user_sessions(user_id, current_user_id)
+    session_ids = await router_service.handle_get_user_sessions(user_id, current_user_id, archived=archived)
     return success_response(data={"sessions": session_ids})
 
 

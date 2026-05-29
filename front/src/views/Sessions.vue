@@ -15,6 +15,25 @@
         <input v-model="sessionSearch" type="search" placeholder="搜索会话" />
       </label>
 
+      <div class="session-segment" aria-label="会话范围">
+        <button
+          class="session-segment-button"
+          :class="{ active: !showArchivedSessions }"
+          type="button"
+          @click="switchSessionArchiveView(false)"
+        >
+          最近
+        </button>
+        <button
+          class="session-segment-button"
+          :class="{ active: showArchivedSessions }"
+          type="button"
+          @click="switchSessionArchiveView(true)"
+        >
+          归档
+        </button>
+      </div>
+
       <button class="side-new-button" type="button" @click="createNewSession">
         <van-icon name="plus" size="14" />
         新对话
@@ -122,6 +141,9 @@
                 <span v-else>继续对话</span>
               </div>
             </div>
+            <button class="archive-action" type="button" @click.stop="updateSessionArchiveState(session)">
+              {{ showArchivedSessions ? '取消归档' : '归档' }}
+            </button>
             <button class="delete-action" type="button" @click.stop="deleteSession(session.session_id)">
               删除
             </button>
@@ -177,6 +199,25 @@
         </header>
 
         <div class="sessions-content">
+          <div class="session-segment" aria-label="会话范围">
+            <button
+              class="session-segment-button"
+              :class="{ active: !showArchivedSessions }"
+              type="button"
+              @click="switchSessionArchiveView(false)"
+            >
+              最近
+            </button>
+            <button
+              class="session-segment-button"
+              :class="{ active: showArchivedSessions }"
+              type="button"
+              @click="switchSessionArchiveView(true)"
+            >
+              归档
+            </button>
+          </div>
+
           <div class="summary-panel">
             <div>
               <span class="panel-kicker">检索记录</span>
@@ -195,12 +236,12 @@
             <p>加载中...</p>
           </div>
 
-          <div v-else-if="sessionStore.sessions.length === 0" class="empty-sessions">
+          <div v-else-if="filteredSessions.length === 0" class="empty-sessions">
             <div class="empty-icon">
               <van-icon name="chat-o" size="34" />
             </div>
-            <h2>暂无会话记录</h2>
-            <p>开始一次新对话后，这里会保存你的追问线索。</p>
+            <h2>{{ showArchivedSessions ? '暂无归档会话' : '暂无会话记录' }}</h2>
+            <p>{{ showArchivedSessions ? '归档后的会话会显示在这里，可以随时恢复。' : '开始一次新对话后，这里会保存你的追问线索。' }}</p>
             <van-button class="empty-action" type="primary" icon="plus" @click="createNewSession">
               新对话
             </van-button>
@@ -208,7 +249,7 @@
 
           <div v-else class="session-card-list">
             <article
-              v-for="session in sessionStore.sessions"
+              v-for="session in filteredSessions"
               :key="session.session_id"
               class="session-card"
               :class="{ active: sessionStore.currentSession?.session_id === session.session_id }"
@@ -234,6 +275,9 @@
                   <span v-else>继续对话</span>
                 </div>
               </div>
+              <button class="archive-action" type="button" @click.stop="updateSessionArchiveState(session)">
+                {{ showArchivedSessions ? '取消归档' : '归档' }}
+              </button>
               <button class="delete-action" type="button" @click.stop="deleteSession(session.session_id)">
                 删除
               </button>
@@ -262,6 +306,7 @@ const route = useRoute();
 const sessionStore = useSessionStore();
 const userStore = useUserStore();
 const sessionSearch = ref('');
+const showArchivedSessions = ref(false);
 
 const filteredSessions = computed(() => {
   const keyword = sessionSearch.value.trim().toLowerCase();
@@ -315,7 +360,7 @@ const loadSessions = async () => {
     let userId = userStore.userInfo.uuid || userStore.userInfo.id || userStore.userInfo.user_id;
     
     if (userId) {
-      await sessionStore.getUserSessions(userId);
+      await sessionStore.getUserSessions(userId, { archived: showArchivedSessions.value });
     } else {
       // 显示详细的错误信息
       showToast('获取用户ID失败，请检查用户信息结构');
@@ -338,6 +383,13 @@ const getSessionTitle = (session) => {
     return firstMessage.length > 20 ? firstMessage.substring(0, 20) + '...' : firstMessage;
   }
   return '新会话';
+};
+
+const switchSessionArchiveView = async (archived) => {
+  if (showArchivedSessions.value === archived) return;
+  showArchivedSessions.value = archived;
+  sessionSearch.value = '';
+  await loadSessions();
 };
 
 const getSessionPreview = (session) => {
@@ -385,6 +437,17 @@ const deleteSession = async (sessionId) => {
     showToast('会话删除成功');
   } else {
     showToast(result.message || '删除失败');
+  }
+};
+
+const updateSessionArchiveState = async (session) => {
+  const nextArchived = !showArchivedSessions.value;
+  const result = await sessionStore.setSessionArchived(session.session_id, nextArchived);
+  if (result.success) {
+    showToast(nextArchived ? '会话已归档' : '会话已取消归档');
+    await loadSessions();
+  } else {
+    showToast(result.message || '操作失败');
   }
 };
 
@@ -465,6 +528,34 @@ const createNewSession = () => {
   background: transparent;
   color: var(--workbench-ink, #16202a);
   font-size: 13px;
+}
+
+.session-segment {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 4px;
+  border: 1px solid #d9e4ec;
+  border-radius: 12px;
+  background: #edf3f8;
+}
+
+.session-segment-button {
+  min-height: 32px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #667486;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.session-segment-button.active {
+  background: #ffffff;
+  color: var(--workbench-primary, #1d6fe8);
+  box-shadow: 0 6px 18px rgba(30, 82, 140, 0.1);
 }
 
 .side-new-button {
@@ -778,7 +869,7 @@ const createNewSession = () => {
 
 .session-card {
   display: grid;
-  grid-template-columns: 38px 1fr auto;
+  grid-template-columns: 38px 1fr auto auto;
   gap: 10px;
   align-items: flex-start;
   padding: 13px;
@@ -855,16 +946,26 @@ const createNewSession = () => {
   gap: 3px;
 }
 
+.archive-action,
 .delete-action {
   align-self: center;
   min-width: 44px;
   height: 30px;
-  border: 1px solid rgba(215, 77, 66, 0.24);
   border-radius: 8px;
-  background: #fff7f6;
-  color: #d74d42;
   font-size: 12px;
   font-weight: 700;
+}
+
+.archive-action {
+  border: 1px solid rgba(29, 111, 232, 0.22);
+  background: #f0f6ff;
+  color: #1d6fe8;
+}
+
+.delete-action {
+  border: 1px solid rgba(215, 77, 66, 0.24);
+  background: #fff7f6;
+  color: #d74d42;
 }
 
 @media screen and (max-width: 380px) {
@@ -880,6 +981,7 @@ const createNewSession = () => {
     grid-template-columns: 34px 1fr;
   }
 
+  .archive-action,
   .delete-action {
     grid-column: 2;
     justify-self: flex-start;
