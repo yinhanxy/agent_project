@@ -226,6 +226,9 @@ def get_user_info(user):
         "gender": serializer.data.get('gender'),
         "bio": serializer.data.get('bio'),
         "is_admin": serializer.data.get('is_admin', False),
+        "dept_id": str(user.dept_id) if user.dept_id else None,
+        "dept_name": user.dept.name if user.dept_id else None,
+        "is_dept_admin": getattr(user, 'is_dept_admin', False),
         "create_time": serializer.data.get('date_joined'),
         "last_login": serializer.data.get('last_login'),
     }

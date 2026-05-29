@@ -1,5 +1,7 @@
 from django.test import TestCase
 from apps.user.models import User, Department, UserStatusChoice
+from rest_framework.test import APIClient
+from apps.user.authentications import JWTTokenGenerator
 
 
 class DepartmentModelTest(TestCase):
@@ -23,3 +25,27 @@ class DepartmentModelTest(TestCase):
             status=UserStatusChoice.ACTIVE,
         )
         self.assertIsNone(user.dept_id)
+
+
+def _auth_client(user):
+    client = APIClient()
+    token, _ = JWTTokenGenerator().generate_token(user)
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+    return client
+
+
+class UserDetailDeptTest(TestCase):
+    def setUp(self):
+        self.dept = Department.objects.create(name="研发部")
+        self.user = User.objects.create_user(
+            username="u1", email="u1@example.com", password="pass123",
+            status=UserStatusChoice.ACTIVE, dept=self.dept, is_dept_admin=True,
+        )
+
+    def test_detail_returns_department_fields(self):
+        resp = _auth_client(self.user).get("/user/detail/")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()["data"]
+        self.assertEqual(data["dept_id"], str(self.dept.dept_id))
+        self.assertEqual(data["dept_name"], "研发部")
+        self.assertTrue(data["is_dept_admin"])
