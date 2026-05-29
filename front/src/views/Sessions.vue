@@ -1,92 +1,259 @@
 <template>
-  <div class="sessions-container app-section-page">
-    <header class="section-hero">
-      <div>
-        <span class="section-eyebrow">
-          <van-icon name="clock-o" size="13" />
-          历史上下文
-        </span>
-        <h1>会话管理</h1>
+  <workbench-layout page-class="sessions-workbench" sidebar-label="历史会话" context-label="会话上下文">
+    <template #rail>
+      <desktop-rail />
+    </template>
+
+    <template #sidebar>
+      <div class="desktop-side-header">
+        <span class="side-eyebrow">历史上下文</span>
+        <h2>会话</h2>
       </div>
-      <van-button class="hero-action" type="primary" icon="plus" @click="createNewSession">
+
+      <label class="side-search">
+        <van-icon name="search" size="16" />
+        <input v-model="sessionSearch" type="search" placeholder="搜索会话" />
+      </label>
+
+      <button class="side-new-button" type="button" @click="createNewSession">
+        <van-icon name="plus" size="14" />
         新对话
-      </van-button>
-    </header>
+      </button>
 
-    <div class="sessions-content">
-      <div class="summary-panel">
-        <div>
-          <span class="panel-kicker">检索记录</span>
-          <strong>{{ sessionStore.sessions.length }}</strong>
-          <span>条会话</span>
-        </div>
-        <div>
-          <span class="panel-kicker">当前状态</span>
-          <strong>{{ sessionStore.currentSession ? '已选择' : '空白' }}</strong>
-          <span>上下文</span>
-        </div>
+      <div v-if="sessionStore.isLoading" class="side-empty">
+        <van-loading size="22" />
+        <span>加载中</span>
       </div>
 
-      <div v-if="sessionStore.isLoading" class="loading">
-        <van-loading type="spinner" color="#1d6fe8" />
-        <p>加载中...</p>
+      <div v-else-if="filteredSessions.length === 0" class="side-empty">
+        <van-icon name="chat-o" size="26" />
+        <strong>暂无匹配会话</strong>
+        <span>换个关键词试试</span>
       </div>
 
-      <div v-else-if="sessionStore.sessions.length === 0" class="empty-sessions">
-        <div class="empty-icon">
-          <van-icon name="chat-o" size="34" />
-        </div>
-        <h2>暂无会话记录</h2>
-        <p>开始一次新对话后，这里会保存你的追问线索。</p>
-        <van-button class="empty-action" type="primary" icon="plus" @click="createNewSession">
-          新对话
-        </van-button>
-      </div>
-
-      <div v-else class="session-card-list">
-        <article
-          v-for="session in sessionStore.sessions"
+      <div v-else class="side-session-list">
+        <button
+          v-for="session in filteredSessions"
           :key="session.session_id"
-          class="session-card"
+          class="side-session-item"
           :class="{ active: sessionStore.currentSession?.session_id === session.session_id }"
+          type="button"
           @click="selectSession(session)"
         >
-          <div class="session-icon">
-            <van-icon name="comment-o" size="18" />
-          </div>
-          <div class="session-main">
-            <div class="session-title-row">
-              <h2>{{ session.title || getSessionTitle(session) }}</h2>
-              <van-icon name="arrow" size="14" />
-            </div>
-            <p>{{ getSessionPreview(session) }}</p>
-            <div class="session-meta">
-              <span>
-                <van-icon name="underway-o" size="12" />
-                {{ formatSessionTime(session.created_at) || '时间未知' }}
-              </span>
-              <span v-if="getMessageCount(session) > 0">
-                {{ getMessageCount(session) }} 轮
-              </span>
-              <span v-else>继续对话</span>
-            </div>
-          </div>
-          <button class="delete-action" type="button" @click.stop="deleteSession(session.session_id)">
-            删除
-          </button>
-        </article>
+          <span class="side-session-title">{{ session.title || getSessionTitle(session) }}</span>
+          <span class="side-session-preview">{{ getSessionPreview(session) }}</span>
+          <span class="side-session-meta">
+            <span>{{ formatSessionTime(session.created_at) || '时间未知' }}</span>
+            <span>{{ getMessageCount(session) || '继续' }}</span>
+          </span>
+        </button>
       </div>
-    </div>
+    </template>
 
-    <tab-bar />
-  </div>
+    <section class="desktop-sessions-main">
+      <header class="desktop-hero">
+        <div>
+          <span class="section-eyebrow">
+            <van-icon name="clock-o" size="13" />
+            历史上下文
+          </span>
+          <h1>会话管理</h1>
+        </div>
+        <van-button class="hero-action" type="primary" icon="plus" @click="createNewSession">
+          新对话
+        </van-button>
+      </header>
+
+      <div class="sessions-content desktop-scroll">
+        <div class="summary-panel">
+          <div>
+            <span class="panel-kicker">检索记录</span>
+            <strong>{{ sessionStore.sessions.length }}</strong>
+            <span>条会话</span>
+          </div>
+          <div>
+            <span class="panel-kicker">当前状态</span>
+            <strong>{{ sessionStore.currentSession ? '已选择' : '空白' }}</strong>
+            <span>上下文</span>
+          </div>
+        </div>
+
+        <div v-if="sessionStore.isLoading" class="loading">
+          <van-loading type="spinner" color="#1d6fe8" />
+          <p>加载中...</p>
+        </div>
+
+        <div v-else-if="filteredSessions.length === 0" class="empty-sessions">
+          <div class="empty-icon">
+            <van-icon name="chat-o" size="34" />
+          </div>
+          <h2>暂无会话记录</h2>
+          <p>开始一次新对话后，这里会保存你的追问线索。</p>
+          <van-button class="empty-action" type="primary" icon="plus" @click="createNewSession">
+            新对话
+          </van-button>
+        </div>
+
+        <div v-else class="session-card-list">
+          <article
+            v-for="session in filteredSessions"
+            :key="session.session_id"
+            class="session-card"
+            :class="{ active: sessionStore.currentSession?.session_id === session.session_id }"
+            @click="selectSession(session)"
+          >
+            <div class="session-icon">
+              <van-icon name="comment-o" size="18" />
+            </div>
+            <div class="session-main">
+              <div class="session-title-row">
+                <h2>{{ session.title || getSessionTitle(session) }}</h2>
+                <van-icon name="arrow" size="14" />
+              </div>
+              <p>{{ getSessionPreview(session) }}</p>
+              <div class="session-meta">
+                <span>
+                  <van-icon name="underway-o" size="12" />
+                  {{ formatSessionTime(session.created_at) || '时间未知' }}
+                </span>
+                <span v-if="getMessageCount(session) > 0">
+                  {{ getMessageCount(session) }} 轮
+                </span>
+                <span v-else>继续对话</span>
+              </div>
+            </div>
+            <button class="delete-action" type="button" @click.stop="deleteSession(session.session_id)">
+              删除
+            </button>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <template #context>
+      <section class="context-card">
+        <div class="context-card-title">
+          <h3>会话统计</h3>
+          <span>{{ sessionStore.sessions.length }}</span>
+        </div>
+        <div class="context-list">
+          <div class="context-row"><span>当前筛选</span><strong>{{ filteredSessions.length }} 条</strong></div>
+          <div class="context-row"><span>当前状态</span><strong>{{ sessionStore.currentSession ? '已选择' : '空白' }}</strong></div>
+          <div class="context-row"><span>入口</span><strong>AI 问答</strong></div>
+        </div>
+      </section>
+
+      <section class="context-card">
+        <div class="context-card-title">
+          <h3>当前会话</h3>
+        </div>
+        <p class="context-muted">{{ currentSessionSummary }}</p>
+      </section>
+
+      <section class="context-card">
+        <div class="context-card-title">
+          <h3>快捷操作</h3>
+        </div>
+        <button class="context-action" type="button" @click="createNewSession">
+          <van-icon name="plus" size="14" />
+          新对话
+        </button>
+      </section>
+    </template>
+
+    <template #mobile>
+      <div class="sessions-container app-section-page">
+        <header class="section-hero">
+          <div>
+            <span class="section-eyebrow">
+              <van-icon name="clock-o" size="13" />
+              历史上下文
+            </span>
+            <h1>会话管理</h1>
+          </div>
+          <van-button class="hero-action" type="primary" icon="plus" @click="createNewSession">
+            新对话
+          </van-button>
+        </header>
+
+        <div class="sessions-content">
+          <div class="summary-panel">
+            <div>
+              <span class="panel-kicker">检索记录</span>
+              <strong>{{ sessionStore.sessions.length }}</strong>
+              <span>条会话</span>
+            </div>
+            <div>
+              <span class="panel-kicker">当前状态</span>
+              <strong>{{ sessionStore.currentSession ? '已选择' : '空白' }}</strong>
+              <span>上下文</span>
+            </div>
+          </div>
+
+          <div v-if="sessionStore.isLoading" class="loading">
+            <van-loading type="spinner" color="#1d6fe8" />
+            <p>加载中...</p>
+          </div>
+
+          <div v-else-if="sessionStore.sessions.length === 0" class="empty-sessions">
+            <div class="empty-icon">
+              <van-icon name="chat-o" size="34" />
+            </div>
+            <h2>暂无会话记录</h2>
+            <p>开始一次新对话后，这里会保存你的追问线索。</p>
+            <van-button class="empty-action" type="primary" icon="plus" @click="createNewSession">
+              新对话
+            </van-button>
+          </div>
+
+          <div v-else class="session-card-list">
+            <article
+              v-for="session in sessionStore.sessions"
+              :key="session.session_id"
+              class="session-card"
+              :class="{ active: sessionStore.currentSession?.session_id === session.session_id }"
+              @click="selectSession(session)"
+            >
+              <div class="session-icon">
+                <van-icon name="comment-o" size="18" />
+              </div>
+              <div class="session-main">
+                <div class="session-title-row">
+                  <h2>{{ session.title || getSessionTitle(session) }}</h2>
+                  <van-icon name="arrow" size="14" />
+                </div>
+                <p>{{ getSessionPreview(session) }}</p>
+                <div class="session-meta">
+                  <span>
+                    <van-icon name="underway-o" size="12" />
+                    {{ formatSessionTime(session.created_at) || '时间未知' }}
+                  </span>
+                  <span v-if="getMessageCount(session) > 0">
+                    {{ getMessageCount(session) }} 轮
+                  </span>
+                  <span v-else>继续对话</span>
+                </div>
+              </div>
+              <button class="delete-action" type="button" @click.stop="deleteSession(session.session_id)">
+                删除
+              </button>
+            </article>
+          </div>
+        </div>
+
+        <tab-bar />
+      </div>
+    </template>
+  </workbench-layout>
 </template>
 
 <script setup>
-import { onMounted, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { showToast } from 'vant';
+import DesktopRail from '../components/DesktopRail.vue';
 import TabBar from '../components/TabBar.vue';
+import WorkbenchLayout from '../components/WorkbenchLayout.vue';
 import { useSessionStore } from '../store/session';
 import { useUserStore } from '../store/user';
 
@@ -94,6 +261,26 @@ const router = useRouter();
 const route = useRoute();
 const sessionStore = useSessionStore();
 const userStore = useUserStore();
+const sessionSearch = ref('');
+
+const filteredSessions = computed(() => {
+  const keyword = sessionSearch.value.trim().toLowerCase();
+  if (!keyword) return sessionStore.sessions;
+
+  return sessionStore.sessions.filter(session => {
+    return [
+      session.title || getSessionTitle(session),
+      getSessionPreview(session),
+      formatSessionTime(session.created_at)
+    ].some(value => String(value || '').toLowerCase().includes(keyword));
+  });
+});
+
+const currentSessionSummary = computed(() => {
+  const session = sessionStore.currentSession;
+  if (!session) return '尚未选择会话。可以从左侧列表进入历史对话，或直接开启新对话。';
+  return `${session.title || getSessionTitle(session)} · ${getMessageCount(session)} 轮对话`;
+});
 
 
 // 监听路由变化，确保每次访问会话管理页面时自动刷新会话列表
@@ -209,6 +396,227 @@ const createNewSession = () => {
 </script>
 
 <style scoped>
+.desktop-sessions-main {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+}
+
+.desktop-hero {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid rgba(199, 213, 223, 0.72);
+  background: rgba(248, 250, 249, 0.94);
+  box-shadow: 0 10px 28px rgba(35, 56, 74, 0.06);
+}
+
+.desktop-scroll {
+  min-height: 0;
+}
+
+.desktop-side-header {
+  margin-bottom: 14px;
+}
+
+.side-eyebrow {
+  color: var(--workbench-teal, #178c83);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.desktop-side-header h2 {
+  margin: 2px 0 0;
+  color: var(--workbench-ink, #16202a);
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.side-search,
+.side-new-button,
+.side-session-meta,
+.context-card-title,
+.context-row,
+.context-action {
+  display: flex;
+  align-items: center;
+}
+
+.side-search {
+  gap: 8px;
+  height: 40px;
+  margin-bottom: 10px;
+  padding: 0 12px;
+  border: 1px solid var(--workbench-line, #dfe7ed);
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--workbench-muted, #6b7684);
+}
+
+.side-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--workbench-ink, #16202a);
+  font-size: 13px;
+}
+
+.side-new-button {
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  height: 38px;
+  margin-bottom: 12px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--workbench-primary, #1d6fe8);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.side-session-list {
+  min-height: 0;
+  max-height: calc(100dvh - 138px);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.side-session-item {
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 11px 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.side-session-item.active,
+.side-session-item:hover {
+  border-color: #c8ddf4;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(31, 122, 224, 0.1);
+}
+
+.side-session-title,
+.side-session-preview {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.side-session-title {
+  margin-bottom: 6px;
+  color: var(--workbench-ink, #16202a);
+  font-size: 14px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-session-preview {
+  color: var(--workbench-muted, #6b7684);
+  display: -webkit-box;
+  font-size: 12px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.side-session-meta {
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 9px;
+  color: #8b99a8;
+  font-size: 11px;
+}
+
+.side-empty {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 8px;
+  min-height: 160px;
+  border: 1px dashed #d4e0e8;
+  border-radius: 14px;
+  color: #8b99a8;
+  text-align: center;
+}
+
+.context-card {
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid var(--workbench-line, #dfe7ed);
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.context-card-title {
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.context-card-title h3 {
+  margin: 0;
+  color: var(--workbench-ink, #16202a);
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.context-card-title span {
+  color: var(--workbench-primary, #1d6fe8);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.context-list {
+  display: grid;
+  gap: 8px;
+}
+
+.context-row {
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--workbench-muted, #6b7684);
+  font-size: 12px;
+}
+
+.context-row strong {
+  color: var(--workbench-ink, #16202a);
+}
+
+.context-muted {
+  margin: 0;
+  color: var(--workbench-muted, #6b7684);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.context-action {
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 38px;
+  border: 0;
+  border-radius: 10px;
+  background: #e8f2ff;
+  color: var(--workbench-primary, #1d6fe8);
+  font-weight: 800;
+  cursor: pointer;
+}
+
 .sessions-container {
   --page-bg: #f5f7f8;
   --surface: #ffffff;

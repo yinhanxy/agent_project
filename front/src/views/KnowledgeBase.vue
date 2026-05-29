@@ -1,5 +1,52 @@
 <template>
-  <div class="kb-container">
+  <workbench-layout page-class="kb-workbench" sidebar-label="知识库导航" context-label="知识库上下文" single-content>
+    <template #rail>
+      <desktop-rail />
+    </template>
+
+    <template #sidebar>
+      <div class="kb-side-header">
+        <span class="side-eyebrow">文档检索中枢</span>
+        <h2>知识库</h2>
+      </div>
+
+      <div class="kb-side-tabs">
+        <button type="button" :class="{ active: activeTab === 'personal' }" @click="activeTab = 'personal'">
+          <van-icon name="description-o" size="15" />
+          个人文档
+          <strong>{{ documents.length }}</strong>
+        </button>
+        <button type="button" :class="{ active: activeTab === 'shared' }" @click="activeTab = 'shared'">
+          <van-icon name="orders-o" size="15" />
+          共享知识库
+          <strong>{{ kbs.length }}</strong>
+        </button>
+      </div>
+
+      <div class="kb-side-section">
+        <div class="kb-side-title">快捷操作</div>
+        <button class="kb-side-action" type="button" @click="triggerFileInput">
+          <van-icon name="plus" size="14" />
+          上传文档
+        </button>
+        <button class="kb-side-action" type="button" @click="showCreateKb = true">
+          <van-icon name="add-o" size="14" />
+          创建知识库
+        </button>
+      </div>
+
+      <div class="kb-side-section">
+        <div class="kb-side-title">范围</div>
+        <div class="kb-scope-list">
+          <span v-for="group in kbGroups" :key="group.scope">
+            {{ group.label }}
+            <strong>{{ group.items.length }}</strong>
+          </span>
+        </div>
+      </div>
+    </template>
+
+    <div class="kb-container">
     <header class="kb-hero">
       <div>
         <span class="section-eyebrow">
@@ -308,15 +355,65 @@
       </div>
     </van-dialog>
 
-    <tab-bar />
-  </div>
+      <tab-bar />
+    </div>
+
+    <template #context>
+      <section class="kb-context-card">
+        <div class="kb-context-title">
+          <h3>资源概览</h3>
+          <span>{{ documents.length + kbs.length }}</span>
+        </div>
+        <div class="kb-context-list">
+          <div><span>个人文档</span><strong>{{ documents.length }}</strong></div>
+          <div><span>知识库</span><strong>{{ kbs.length }}</strong></div>
+          <div><span>待上传</span><strong>{{ pendingFiles.length }}</strong></div>
+        </div>
+      </section>
+
+      <section class="kb-context-card">
+        <div class="kb-context-title">
+          <h3>支持格式</h3>
+        </div>
+        <div class="kb-format-list">
+          <span>PDF</span>
+          <span>TXT</span>
+          <span>MD</span>
+          <span>DOCX</span>
+          <span>PPTX</span>
+        </div>
+      </section>
+
+      <section class="kb-context-card">
+        <div class="kb-context-title">
+          <h3>检索配置</h3>
+        </div>
+        <div class="kb-context-list">
+          <div><span>模式</span><strong>混合检索</strong></div>
+          <div><span>重排序</span><strong>开启</strong></div>
+          <div><span>来源</span><strong>可追踪</strong></div>
+        </div>
+      </section>
+
+      <section class="kb-context-card">
+        <div class="kb-context-title">
+          <h3>危险操作</h3>
+        </div>
+        <button class="kb-danger-button" type="button" @click="confirmClean">
+          清空我的知识库
+        </button>
+      </section>
+    </template>
+  </workbench-layout>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { showToast, showConfirmDialog } from 'vant'
 import axios from 'axios'
+import DesktopRail from '../components/DesktopRail.vue'
 import TabBar from '../components/TabBar.vue'
+import WorkbenchLayout from '../components/WorkbenchLayout.vue'
 import { useUserStore } from '../store/user'
 
 const userStore = useUserStore()
@@ -664,6 +761,182 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.kb-side-header {
+  margin-bottom: 14px;
+}
+
+.side-eyebrow {
+  color: var(--workbench-teal, #178c83);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.kb-side-header h2 {
+  margin: 2px 0 0;
+  color: var(--workbench-ink, #16202a);
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.kb-side-tabs,
+.kb-side-section,
+.kb-context-card {
+  margin-bottom: 14px;
+}
+
+.kb-side-tabs {
+  display: grid;
+  gap: 8px;
+}
+
+.kb-side-tabs button,
+.kb-side-action,
+.kb-danger-button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  cursor: pointer;
+}
+
+.kb-side-tabs button {
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--workbench-muted, #6b7684);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.kb-side-tabs button.active,
+.kb-side-tabs button:hover {
+  border-color: #c8ddf4;
+  background: #ffffff;
+  color: var(--workbench-primary, #1d6fe8);
+  box-shadow: 0 10px 28px rgba(31, 122, 224, 0.08);
+}
+
+.kb-side-tabs strong {
+  margin-left: auto;
+  color: inherit;
+}
+
+.kb-side-section {
+  padding: 12px;
+  border: 1px solid var(--workbench-line, #dfe7ed);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.kb-side-title {
+  margin-bottom: 9px;
+  color: #8795a5;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.kb-side-action {
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  margin-top: 8px;
+  border-radius: 10px;
+  background: #e8f2ff;
+  color: var(--workbench-primary, #1d6fe8);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.kb-scope-list {
+  display: grid;
+  gap: 8px;
+}
+
+.kb-scope-list span {
+  display: flex;
+  justify-content: space-between;
+  color: var(--workbench-muted, #6b7684);
+  font-size: 12px;
+}
+
+.kb-scope-list strong {
+  color: var(--workbench-ink, #16202a);
+}
+
+.kb-context-card {
+  padding: 14px;
+  border: 1px solid var(--workbench-line, #dfe7ed);
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.kb-context-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.kb-context-title h3 {
+  margin: 0;
+  color: var(--workbench-ink, #16202a);
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.kb-context-title span {
+  color: var(--workbench-primary, #1d6fe8);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.kb-context-list {
+  display: grid;
+  gap: 8px;
+}
+
+.kb-context-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--workbench-muted, #6b7684);
+  font-size: 12px;
+}
+
+.kb-context-list strong {
+  color: var(--workbench-ink, #16202a);
+}
+
+.kb-format-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.kb-format-list span {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #edf5fb;
+  color: #426178;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.kb-danger-button {
+  justify-content: center;
+  height: 36px;
+  border-radius: 10px;
+  background: #fff4f2;
+  color: #d74d42;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .kb-container {
   --page-bg: #f5f7f8;
   --surface: #ffffff;
@@ -678,6 +951,25 @@ onMounted(() => {
   padding-bottom: calc(58px + env(safe-area-inset-bottom));
   background: linear-gradient(180deg, #f8faf9 0%, var(--page-bg) 46%, #eef3f5 100%);
   color: var(--ink);
+}
+
+@media screen and (min-width: 901px) {
+  .kb-container {
+    display: flex;
+    min-height: 0;
+    height: 100%;
+    flex-direction: column;
+    padding-bottom: 0;
+    background: transparent;
+  }
+
+  .kb-content {
+    min-height: 0;
+  }
+
+  .kb-container :deep(.app-tabbar) {
+    display: none;
+  }
 }
 
 .kb-hero {

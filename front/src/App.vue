@@ -1,5 +1,5 @@
 <template>
-  <div class="app" :class="{ 'app--wide': $route.path.startsWith('/aichat') }">
+  <div class="app" :class="{ 'app--wide': isWideRoute }">
     <router-view v-slot="{ Component }">
       <template v-if="$route.meta.keepAlive">
         <keep-alive>
@@ -16,9 +16,14 @@
 <script setup>
 import { onMounted } from 'vue'
 import axios from 'axios'
+import { computed } from 'vue'
 import { useUserStore } from './store/user'
+import { useRoute } from 'vue-router'
 
 const userStore = useUserStore()
+const route = useRoute()
+const wideRoutePrefixes = ['/aichat', '/sessions', '/knowledge', '/my', '/settings', '/admin/accounts']
+const isWideRoute = computed(() => wideRoutePrefixes.some(prefix => route.path.startsWith(prefix)))
 
 // 应用启动时拉取管理员状态，解决刷新后状态丢失
 onMounted(async () => {

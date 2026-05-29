@@ -1,5 +1,31 @@
 <template>
-  <div class="my-container">
+  <workbench-layout page-class="account-workbench" sidebar-label="账户导航" context-label="账户上下文" single-content>
+    <template #rail>
+      <desktop-rail />
+    </template>
+
+    <template #sidebar>
+      <div class="account-side-header">
+        <span class="side-eyebrow">账户中心</span>
+        <h2>我的</h2>
+      </div>
+      <div class="account-side-list">
+        <button class="account-side-item active" type="button" @click="router.push('/my')">
+          <van-icon name="user-o" size="16" />
+          账户概览
+        </button>
+        <button class="account-side-item" type="button" @click="goToProfile">
+          <van-icon name="contact-o" size="16" />
+          个人信息
+        </button>
+        <button class="account-side-item" type="button" @click="goToSettings">
+          <van-icon name="setting-o" size="16" />
+          设置
+        </button>
+      </div>
+    </template>
+
+    <div class="my-container">
     <header class="my-hero">
       <span class="section-eyebrow">
         <van-icon name="manager-o" size="13" />
@@ -60,8 +86,32 @@
         <van-cell v-if="isLogin" :title="$t('my.logout')" label="退出当前账号" icon="close" @click="handleLogout" />
       </van-cell-group>
     </div>
-    <tab-bar />
-  </div>
+      <tab-bar />
+    </div>
+
+    <template #context>
+      <section class="account-context-card">
+        <div class="account-context-title">
+          <h3>登录状态</h3>
+          <span>{{ isLogin ? '在线' : '未登录' }}</span>
+        </div>
+        <div class="account-context-list">
+          <div><span>用户名</span><strong>{{ isLogin && userInfo ? userInfo.username : '访客' }}</strong></div>
+          <div><span>角色</span><strong>{{ userStore.isAdmin ? '管理员' : '普通用户' }}</strong></div>
+          <div><span>数据同步</span><strong>{{ isLogin ? '可用' : '登录后开启' }}</strong></div>
+        </div>
+      </section>
+
+      <section class="account-context-card">
+        <div class="account-context-title">
+          <h3>快捷操作</h3>
+        </div>
+        <button v-if="!isLogin" class="account-context-action" type="button" @click="goToLogin">登录</button>
+        <button v-if="isLogin" class="account-context-action" type="button" @click="handleSwitchAccount">切换账号</button>
+        <button v-if="isLogin" class="account-context-danger" type="button" @click="handleLogout">退出登录</button>
+      </section>
+    </template>
+  </workbench-layout>
 </template>
 
 <script setup>
@@ -70,7 +120,9 @@ import { useUserStore } from '../store/user';
 import { useRouter } from 'vue-router';
 import { computed, ref } from 'vue';
 import { showDialog } from 'vant';
+import DesktopRail from '../components/DesktopRail.vue';
 import TabBar from '../components/TabBar.vue';
+import WorkbenchLayout from '../components/WorkbenchLayout.vue';
 import { useI18n } from 'vue-i18n';
 import { useSessionStore } from '../store/session';
 
@@ -161,6 +213,123 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.account-side-header {
+  margin-bottom: 14px;
+}
+
+.side-eyebrow {
+  color: var(--workbench-teal, #178c83);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.account-side-header h2 {
+  margin: 2px 0 0;
+  color: var(--workbench-ink, #16202a);
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.account-side-list {
+  display: grid;
+  gap: 8px;
+}
+
+.account-side-item,
+.account-context-action,
+.account-context-danger {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  cursor: pointer;
+}
+
+.account-side-item {
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--workbench-muted, #6b7684);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.account-side-item.active,
+.account-side-item:hover {
+  border-color: #c8ddf4;
+  background: #ffffff;
+  color: var(--workbench-primary, #1d6fe8);
+  box-shadow: 0 10px 28px rgba(31, 122, 224, 0.08);
+}
+
+.account-context-card {
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid var(--workbench-line, #dfe7ed);
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.account-context-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.account-context-title h3 {
+  margin: 0;
+  color: var(--workbench-ink, #16202a);
+  font-size: 14px;
+}
+
+.account-context-title span {
+  color: var(--workbench-primary, #1d6fe8);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.account-context-list {
+  display: grid;
+  gap: 8px;
+}
+
+.account-context-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--workbench-muted, #6b7684);
+  font-size: 12px;
+}
+
+.account-context-list strong {
+  color: var(--workbench-ink, #16202a);
+}
+
+.account-context-action,
+.account-context-danger {
+  justify-content: center;
+  height: 36px;
+  margin-top: 8px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.account-context-action {
+  background: #e8f2ff;
+  color: var(--workbench-primary, #1d6fe8);
+}
+
+.account-context-danger {
+  background: #fff4f2;
+  color: #d74d42;
+}
+
 .my-container {
   --page-bg: #f5f7f8;
   --surface: #ffffff;
@@ -175,6 +344,19 @@ onMounted(async () => {
   padding-bottom: calc(58px + env(safe-area-inset-bottom));
   background: linear-gradient(180deg, #f8faf9 0%, var(--page-bg) 46%, #eef3f5 100%);
   color: var(--ink);
+}
+
+@media screen and (min-width: 901px) {
+  .my-container {
+    min-height: 100%;
+    padding-bottom: 0;
+    background: transparent;
+    overflow-y: auto;
+  }
+
+  .my-container :deep(.app-tabbar) {
+    display: none;
+  }
 }
 
 .my-hero {
