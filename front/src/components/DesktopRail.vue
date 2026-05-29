@@ -10,7 +10,7 @@
       type="button"
       :title="item.label"
       :aria-label="item.label"
-      @click="router.push(item.to)"
+      @click="navigateTo(item)"
     >
       <van-icon :name="item.icon" size="21" />
     </button>
@@ -21,7 +21,7 @@
       type="button"
       title="我的"
       aria-label="我的"
-      @click="router.push('/my')"
+      @click="navigateTo({ to: '/my', requiresAuth: true })"
     >
       <van-icon name="user-o" size="21" />
     </button>
@@ -39,10 +39,18 @@ const router = useRouter();
 const userStore = useUserStore();
 const sessionStore = useSessionStore();
 
+const isLoggedIn = () => Boolean(localStorage.getItem('jwt_token') || userStore.token);
+
+const requireLogin = (redirect = route.fullPath) => {
+  if (isLoggedIn()) return true;
+  router.push(`/login?redirect=${encodeURIComponent(redirect)}`);
+  return false;
+};
+
 const navItems = computed(() => {
   const items = [
     { label: 'AI问答', icon: 'chat-o', to: '/aichat', active: route.path.startsWith('/aichat') },
-    { label: '知识库', icon: 'orders-o', to: '/knowledge', active: route.path.startsWith('/knowledge') }
+    { label: '知识库', icon: 'orders-o', to: '/knowledge', active: route.path.startsWith('/knowledge'), requiresAuth: true }
   ];
 
   if (userStore.isAdmin) {
@@ -50,14 +58,21 @@ const navItems = computed(() => {
       label: '账号管理',
       icon: 'manager-o',
       to: '/admin/accounts',
-      active: route.path.startsWith('/admin/accounts')
+      active: route.path.startsWith('/admin/accounts'),
+      requiresAuth: true
     });
   }
 
   return items;
 });
 
+const navigateTo = (item) => {
+  if (item.requiresAuth && !requireLogin(item.to)) return;
+  router.push(item.to);
+};
+
 const createNewChat = () => {
+  if (!requireLogin('/aichat')) return;
   sessionStore.requestNewChat();
   router.push('/aichat');
 };

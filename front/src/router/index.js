@@ -38,7 +38,8 @@ const routes = [
     component: () => import('../views/AIChat.vue'),
     meta: {
       title: 'AI问答',
-      keepAlive: true
+      keepAlive: true,
+      requiresAuth: true
     }
   },
   {
@@ -47,7 +48,8 @@ const routes = [
     component: () => import('../views/My.vue'),
     meta: {
       title: '我的',
-      keepAlive: true
+      keepAlive: true,
+      requiresAuth: true
     }
   },
   {
@@ -56,7 +58,8 @@ const routes = [
     component: () => import('../views/Profile.vue'),
     meta: {
       title: '个人信息',
-      keepAlive: false
+      keepAlive: false,
+      requiresAuth: true
     }
   },
   {
@@ -65,7 +68,8 @@ const routes = [
     component: () => import('../views/Settings.vue'),
     meta: {
       title: '设置',
-      keepAlive: false
+      keepAlive: false,
+      requiresAuth: true
     }
   },
   {
@@ -74,7 +78,8 @@ const routes = [
     component: () => import('../views/Sessions.vue'),
     meta: {
       title: '会话管理',
-      keepAlive: true
+      keepAlive: true,
+      requiresAuth: true
     }
   },
   {
@@ -83,7 +88,8 @@ const routes = [
     component: () => import('../views/KnowledgeBase.vue'),
     meta: {
       title: '知识库',
-      keepAlive: true
+      keepAlive: true,
+      requiresAuth: true
     }
   },
   {
@@ -92,7 +98,8 @@ const routes = [
     component: () => import('../views/AccountManagement.vue'),
     meta: {
       title: '账号管理',
-      keepAlive: true
+      keepAlive: true,
+      requiresAuth: true
     }
   },
 ]
@@ -106,8 +113,12 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   // 设置页面标题
   document.title = to.meta.title || '新闻资讯'
-  
-  // 直接允许访问所有页面
+
+  if (to.meta.requiresAuth && !localStorage.getItem('jwt_token')) {
+    next(`/login?redirect=${encodeURIComponent(to.fullPath)}`)
+    return
+  }
+
   next()
 })
 

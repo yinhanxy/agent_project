@@ -360,6 +360,11 @@ const sessionActionOptions = computed(() => [
 ]);
 
 const isLoggedIn = computed(() => Boolean(localStorage.getItem('jwt_token') || userStore.token));
+const requireLogin = (redirect = route.fullPath) => {
+  if (isLoggedIn.value) return true;
+  router.push(`/login?redirect=${encodeURIComponent(redirect)}`);
+  return false;
+};
 const latestCitations = computed(() => {
   const assistantWithSources = [...messages.value]
     .reverse()
@@ -465,7 +470,7 @@ const sendMessage = async () => {
   const token = localStorage.getItem('jwt_token') || userStore.token;
   if (!token) {
     showToast('请先登录');
-    router.push('/login');
+    router.push(`/login?redirect=${encodeURIComponent('/aichat')}`);
     return;
   }
   
@@ -531,7 +536,7 @@ const fetchAIResponse = async (userMessage) => {
       if (response.status === 401) {
         userStore.clearAuth();
         showToast('登录已过期，请重新登录');
-        router.push('/login');
+        router.push(`/login?redirect=${encodeURIComponent(route.fullPath)}`);
         return;
       }
       const error = await response.json().catch(() => ({}));
@@ -648,11 +653,13 @@ const fetchAIResponse = async (userMessage) => {
 
 // 跳转到会话管理页面
 const goToSessions = () => {
+  if (!requireLogin('/sessions')) return;
   router.push('/sessions');
 };
 
 // 跳转到知识库页面
 const goToKnowledge = () => {
+  if (!requireLogin('/knowledge')) return;
   router.push('/knowledge');
 };
 
@@ -695,6 +702,7 @@ const switchSessionArchiveView = async (archived) => {
 };
 
 const createNewChat = () => {
+  if (!requireLogin('/aichat')) return;
   sessionStore.requestNewChat();
   resetChatState();
   if (route.path !== '/aichat') {
