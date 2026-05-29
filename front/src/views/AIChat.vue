@@ -132,16 +132,16 @@
           <span class="status-copy">混合检索 · 来源可追踪</span>
         </div>
 
-        <div class="knowledge-strip" aria-label="知识库快捷入口">
+        <div v-if="knowledgeBases.length" class="knowledge-strip" aria-label="知识库快捷入口">
           <button
-            v-for="source in knowledgeChips"
-            :key="source"
+            v-for="kb in knowledgeBases"
+            :key="kb.kb_id"
             class="knowledge-chip"
             type="button"
             @click="goToKnowledge"
           >
             <van-icon name="description-o" size="13" />
-            {{ source }}
+            {{ kb.name }}
           </button>
         </div>
       </header>
@@ -251,12 +251,13 @@
           <h3>当前知识库</h3>
           <button type="button" @click="goToKnowledge">管理</button>
         </div>
-        <div class="context-list">
-          <div v-for="source in knowledgeChips" :key="source" class="context-row">
-            <span>{{ source }}</span>
-            <strong>可用</strong>
+        <div v-if="knowledgeBases.length" class="context-list">
+          <div v-for="kb in knowledgeBases" :key="kb.kb_id" class="context-row">
+            <span>{{ kb.name }}</span>
+            <strong>{{ scopeLabel(kb.scope) }}</strong>
           </div>
         </div>
+        <p v-else class="context-muted">暂无知识库</p>
       </section>
 
       <section class="context-card">
@@ -307,6 +308,7 @@ import DOMPurify from 'dompurify';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/monokai-sublime.css';
 import 'highlight.js/lib/common';
+import axios from 'axios';
 import { apiConfig } from '../config/api';
 import { useUserStore } from '../store/user';
 import { useSessionStore } from '../store/session';
@@ -324,7 +326,9 @@ const getCsrfToken = () => {
 const messages = ref([
   { role: 'assistant', content: '你好！我是AI助手，有什么可以帮助你的吗？', citations: [], showCitations: false, usedRag: false }
 ]);
-const knowledgeChips = ['FastAPI 文档', 'LangChain 笔记', '课程资料'];
+const knowledgeBases = ref([]);
+const KB_SCOPE_LABELS = { personal: '个人', company: '公开', dept: '部门', admin: '管理员' };
+const scopeLabel = (scope) => KB_SCOPE_LABELS[scope] || '可用';
 const userInput = ref('');
 const sessionSearch = ref('');
 const messagesContainer = ref(null);
@@ -646,6 +650,20 @@ const loadSidebarSessions = async () => {
   }
 };
 
+const loadKnowledgeBases = async () => {
+  const token = localStorage.getItem('jwt_token') || userStore.token;
+  if (!token) {
+    knowledgeBases.value = [];
+    return;
+  }
+  try {
+    const res = await axios.get('/api/kb/list', { headers: { Authorization: `Bearer ${token}` } });
+    knowledgeBases.value = res.data?.data?.kbs || [];
+  } catch (error) {
+    console.error('加载知识库列表失败:', error);
+  }
+};
+
 const switchSessionArchiveView = async (archived) => {
   if (showArchivedSessions.value === archived) return;
   showArchivedSessions.value = archived;
@@ -851,6 +869,7 @@ watch(() => route.fullPath, (newFullPath, oldFullPath) => {
 onMounted(async () => {
   await syncWithRoute();
   await loadSidebarSessions();
+  await loadKnowledgeBases();
   scrollToBottom();
 });
 
@@ -858,6 +877,7 @@ onMounted(async () => {
 onActivated(async () => {
   await syncWithRoute();
   await loadSidebarSessions();
+  await loadKnowledgeBases();
   scrollToBottom();
 });
 
