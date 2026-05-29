@@ -213,6 +213,14 @@
         </div>
       </main>
 
+      <div v-if="isCurrentSessionArchived" class="archive-readonly-banner">
+        <div>
+          <strong>此会话已归档</strong>
+          <span>归档会话只能查看，取消归档后才能继续对话。</span>
+        </div>
+        <button type="button" @click="unarchiveCurrentSession">取消归档</button>
+      </div>
+
       <footer class="composer-shell">
         <button class="composer-tool" type="button" aria-label="打开知识库" @click="goToKnowledge">
           <van-icon name="notes-o" size="20" />
@@ -222,14 +230,15 @@
           rows="1"
           autosize
           type="textarea"
-          placeholder="向知识库提问..."
+          :placeholder="composerPlaceholder"
+          :disabled="isCurrentSessionArchived"
           class="chat-input"
           @keypress.enter.prevent="sendMessage"
         />
         <van-button
           type="primary"
           class="send-button"
-          :disabled="isLoading || !userInput.trim()"
+          :disabled="isLoading || isCurrentSessionArchived || !userInput.trim()"
           @click="sendMessage"
         >
           <van-icon name="guide-o" size="17" />
@@ -363,6 +372,15 @@ const currentSessionTitle = computed(() => {
   if (currentSession) return getSessionTitle(currentSession);
   return sessionId.value ? '当前会话' : '新对话';
 });
+const currentSessionRecord = computed(() => (
+  sessionStore.currentSession
+  || sessionStore.sessions.find(session => session.session_id === sessionId.value)
+  || null
+));
+const isCurrentSessionArchived = computed(() => Boolean(currentSessionRecord.value?.archived));
+const composerPlaceholder = computed(() => (
+  isCurrentSessionArchived.value ? '归档会话只能查看，取消归档后继续对话' : '向知识库提问...'
+));
 const filteredSessionGroups = computed(() => {
   const keyword = sessionSearch.value.trim().toLowerCase();
   const groups = [
@@ -437,6 +455,11 @@ onUnmounted(stopTick);
 // 发送消息
 const sendMessage = async () => {
   if (!userInput.value.trim() || isLoading.value) return;
+
+  if (isCurrentSessionArchived.value) {
+    showToast('归档会话不能继续对话，请先取消归档');
+    return;
+  }
   
   // 检查是否登录（以实际 token 为准，避免 isLogin 持久化导致误判）
   const token = localStorage.getItem('jwt_token') || userStore.token;
@@ -716,11 +739,22 @@ const updateSessionArchiveState = async (session, archived) => {
       sessionStore.requestNewChat();
       resetChatState();
       router.push('/aichat');
+    } else if (!archived && session.session_id === sessionId.value && sessionStore.currentSession) {
+      sessionStore.setCurrentSession({
+        ...sessionStore.currentSession,
+        archived: false,
+        archived_at: null
+      });
     }
     await loadSidebarSessions();
   } else {
     showToast(result.message || '操作失败');
   }
+};
+
+const unarchiveCurrentSession = async () => {
+  if (!currentSessionRecord.value?.session_id) return;
+  await updateSessionArchiveState(currentSessionRecord.value, false);
 };
 
 const deleteSessionFromHistory = async (session) => {
@@ -1541,6 +1575,48 @@ const loadSessionHistory = (session) => {
   flex-shrink: 0;
   color: var(--amber);
   font-weight: 800;
+}
+
+.archive-readonly-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 24px;
+  border-top: 1px solid rgba(199, 213, 223, 0.72);
+  background: #fff8e8;
+  color: #6f5114;
+}
+
+.archive-readonly-banner div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.archive-readonly-banner strong {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.archive-readonly-banner span {
+  color: #866a25;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.archive-readonly-banner button {
+  flex-shrink: 0;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid rgba(185, 133, 29, 0.3);
+  border-radius: 9px;
+  background: #ffffff;
+  color: #8a6316;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
 }
 
 .composer-shell {

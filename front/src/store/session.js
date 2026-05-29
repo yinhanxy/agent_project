@@ -118,6 +118,9 @@ export const useSessionStore = defineStore('session', {
         // 处理可能的包装格式，支持 {code, message, data} 格式
         const sessionData = response.data.data || response.data;
         this.currentSession = sessionData;
+        if (sessionData?.session_id === undefined) {
+          this.currentSession.session_id = sessionId;
+        }
         return {
           success: true,
           data: sessionData

@@ -14,6 +14,9 @@ class RAGRequest(BaseModel):
 class SessionResponse(BaseModel):
     session_id: str
     history: List[Tuple[str, str]]
+    title: Optional[str] = None
+    archived: bool = False
+    archived_at: Optional[str] = None
 
 
 class AgentStep(BaseModel):

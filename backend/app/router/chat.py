@@ -75,11 +75,14 @@ async def admin_set_admin(
 async def query_stream(
         request: QueryRequest,
         user_id: str = Depends(get_current_user_id),
+        router_service: ChatService = Depends(get_router_service),
         _: None = Depends(rate_limit(limit=10, window=60))
 ):
     """查询Agent流式响应"""
     # 如果没有提供session_id，自动生成一个
     session_id = request.session_id or str(uuid.uuid4())
+    if request.session_id:
+        await router_service.handle_ensure_session_writable(request.session_id, user_id)
     
     # 直接调用get_agent_stream_response函数
     return StreamingResponse(
@@ -109,8 +112,14 @@ async def query_rag(
 @chat_router.get("/session/{session_id}", response_model=SessionResponse)
 async def get_session(session_id: str, user_id: str = Depends(get_current_user_id), router_service: ChatService = Depends(get_router_service)):
     """获取会话信息，使用user_id验证"""
-    history = await router_service.handle_get_session(session_id, user_id)
-    return success_response(data=SessionResponse(session_id=session_id, history=history))
+    session_data = await router_service.handle_get_session(session_id, user_id)
+    return success_response(data=SessionResponse(
+        session_id=session_id,
+        history=session_data.get("history", []),
+        title=session_data.get("title"),
+        archived=session_data.get("archived", False),
+        archived_at=session_data.get("archived_at")
+    ))
 
 
 

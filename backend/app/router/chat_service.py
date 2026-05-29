@@ -66,6 +66,7 @@ class ChatService:
         self, query: str, session_id: Optional[str], user_id: str
     ) -> Tuple[str, dict, str]:
         session_id = session_id or str(uuid.uuid4())
+        await sm.session_manager.ensure_session_writable(session_id, user_id)
         history = await sm.session_manager.get_history(session_id, user_id)
         result = await get_agent_response(query, history)
         response = result.get("response")
@@ -82,10 +83,13 @@ class ChatService:
     # ── 会话管理 ──────────────────────────────────────────────────────────────
 
     async def handle_get_session(self, session_id: str, user_id: str):
-        return await sm.session_manager.get_history(session_id, user_id)
+        return await sm.session_manager.get_session(session_id, user_id)
 
     async def handle_delete_session(self, session_id: str, user_id: str) -> None:
         await sm.session_manager.clear_session(session_id, user_id)
+
+    async def handle_ensure_session_writable(self, session_id: str, user_id: str) -> None:
+        await sm.session_manager.ensure_session_writable(session_id, user_id)
 
     async def handle_archive_session(self, session_id: str, user_id: str, archived: bool) -> Dict:
         return await sm.session_manager.set_session_archived(session_id, user_id, archived)

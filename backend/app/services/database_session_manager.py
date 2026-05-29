@@ -46,7 +46,12 @@ class DatabaseSessionManager:
                         i += 2
                     else:
                         i += 1
-                return {"history": history}
+                return {
+                    "history": history,
+                    "title": result.title,
+                    "archived": result.archived,
+                    "archived_at": result.archived_at.isoformat() if result.archived_at else None
+                }
             else:
                 # 检查会话id是否存在
                 existing_session = await db.run_sync(
@@ -72,7 +77,32 @@ class DatabaseSessionManager:
                     await db.commit()
                     await db.refresh(new_session)
                     logger.info(f"【数据库会话管理】创建新会话: {session_id} 属于用户: {user_id}")
-                    return {"history": []}
+                    return {
+                        "history": [],
+                        "title": new_session.title,
+                        "archived": False,
+                        "archived_at": None
+                    }
+
+    async def ensure_session_writable(self, session_id: str, user_id: str):
+        """确认会话可继续写入；归档会话只能查看。"""
+        if not session_id:
+            return
+
+        async with AsyncSessionLocal() as db:
+            session = await db.run_sync(
+                lambda session: session.query(ChatSession).filter(
+                    ChatSession.id == session_id,
+                    ChatSession.user_id == user_id
+                ).first()
+            )
+
+            if session and session.archived:
+                from fastapi import HTTPException, status
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="归档会话不能继续对话，请先取消归档"
+                )
 
     async def add_message(self, session_id: str, user_id: str, user_message: str, assistant_message: str):
         """添加消息并保存到数据库"""
@@ -91,6 +121,13 @@ class DatabaseSessionManager:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="当前会话不属于你，无法添加消息"
+                    )
+                if existing_session.archived:
+                    logger.warning(f"【数据库会话管理】会话 {session_id} 已归档，拒绝追加消息")
+                    from fastapi import HTTPException, status
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="归档会话不能继续对话，请先取消归档"
                     )
                 session = existing_session
             else:
