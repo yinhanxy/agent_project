@@ -54,6 +54,18 @@ class UserManager(BaseUserManager):
 
     acreate_user.alters_data = True
 
+class Department(models.Model):
+    """部门"""
+    dept_id = ShortUUIDField(primary_key=True, unique=True, editable=False)
+    name = models.CharField(max_length=100, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'department'
+
+    def __str__(self):
+        return self.name
+
 class GenderChoice(models.IntegerChoices):
     """
     性别选择
@@ -90,6 +102,13 @@ class User(AbstractBaseUser):
     date_joined = models.DateTimeField(auto_now_add=True)
     last_login = models.DateTimeField(null=True, blank=True)
     avatar = models.CharField(max_length=255, null=True, blank=True)
+    # 所属部门（单部门归属，可为空）
+    dept = models.ForeignKey(
+        'Department', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='members',
+    )
+    # 是否本部门管理员（总管理员任命）
+    is_dept_admin = models.BooleanField(default=False)
 
     # 确保管理器引用正确
     objects = UserManager()

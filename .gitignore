@@ -45,6 +45,9 @@ media/
 *.db
 *.sqlite3
 migrations/
+# Django user app 迁移纳入版本控制（部门权限功能起；覆盖上面的 migrations/ 通配）
+!DjangoUserService/apps/user/migrations/
+!DjangoUserService/apps/user/migrations/*.py
 
 # Build artifacts
 build/
