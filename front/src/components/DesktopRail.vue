@@ -42,7 +42,6 @@ const sessionStore = useSessionStore();
 const navItems = computed(() => {
   const items = [
     { label: 'AI问答', icon: 'chat-o', to: '/aichat', active: route.path.startsWith('/aichat') },
-    { label: '会话管理', icon: 'comment-circle-o', to: '/sessions', active: route.path.startsWith('/sessions') },
     { label: '知识库', icon: 'orders-o', to: '/knowledge', active: route.path.startsWith('/knowledge') }
   ];
 

@@ -5,9 +5,6 @@
       <button class="rail-button active" type="button" title="AI问答" aria-label="AI问答" @click="router.push('/aichat')">
         <van-icon name="chat-o" size="21" />
       </button>
-      <button class="rail-button" type="button" title="会话管理" aria-label="会话管理" @click="goToSessions">
-        <van-icon name="comment-circle-o" size="21" />
-      </button>
       <button class="rail-button" type="button" title="知识库" aria-label="知识库" @click="goToKnowledge">
         <van-icon name="orders-o" size="21" />
       </button>
@@ -64,21 +61,29 @@
         <template v-for="group in filteredSessionGroups" :key="group.label">
           <div v-if="group.items.length" class="history-group">
             <div class="history-group-label">{{ group.label }}</div>
-            <button
+            <div
               v-for="session in group.items"
               :key="session.session_id"
               class="session-item"
               :class="{ active: isActiveSession(session) }"
-              type="button"
-              @click="selectSession(session)"
             >
-              <span class="session-title">{{ getSessionTitle(session) }}</span>
-              <span class="session-preview">{{ getSessionPreview(session) }}</span>
-              <span class="session-meta">
-                <span>{{ formatSessionTime(session.updated_at || session.created_at) || '时间未知' }}</span>
-                <span>{{ getMessageCount(session) || '继续' }}</span>
-              </span>
-            </button>
+              <button class="session-open-area" type="button" @click="selectSession(session)">
+                <span class="session-title">{{ getSessionTitle(session) }}</span>
+                <span class="session-preview">{{ getSessionPreview(session) }}</span>
+                <span class="session-meta">
+                  <span>{{ formatSessionTime(session.updated_at || session.created_at) || '时间未知' }}</span>
+                  <span>{{ getMessageCount(session) || '继续' }}</span>
+                </span>
+              </button>
+              <button
+                class="session-menu-button"
+                type="button"
+                :aria-label="`管理会话：${getSessionTitle(session)}`"
+                @click.stop="openSessionActions(session)"
+              >
+                <van-icon name="ellipsis" size="18" />
+              </button>
+            </div>
           </div>
         </template>
       </div>
@@ -262,6 +267,13 @@
     </aside>
 
     <tab-bar />
+
+    <van-action-sheet
+      v-model:show="showSessionActions"
+      :actions="sessionActionOptions"
+      cancel-text="取消"
+      @select="onSessionAction"
+    />
   </div>
 </template>
 
@@ -269,7 +281,7 @@
 import { ref, computed, onMounted, onActivated, onUnmounted, nextTick, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import TabBar from '../components/TabBar.vue';
-import { showToast } from 'vant';
+import { showConfirmDialog, showToast } from 'vant';
 import { marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import DOMPurify from 'dompurify';
@@ -300,11 +312,17 @@ const messagesContainer = ref(null);
 const isLoading = ref(false);
 const sessionId = ref('');
 const hasJumped = ref(false);
+const showSessionActions = ref(false);
+const actionSession = ref(null);
 
 const router = useRouter();
 const route = useRoute();
 const userStore = useUserStore();
 const sessionStore = useSessionStore();
+const sessionActionOptions = [
+  { name: '归档', value: 'archive' },
+  { name: '删除', value: 'delete', color: '#d74d42' }
+];
 
 const isLoggedIn = computed(() => Boolean(localStorage.getItem('jwt_token') || userStore.token));
 const latestCitations = computed(() => {
@@ -617,6 +635,50 @@ const createNewChat = () => {
 const selectSession = (session) => {
   if (!session?.session_id || session.session_id === sessionId.value) return;
   router.push(`/aichat/${session.session_id}`);
+};
+
+const openSessionActions = (session) => {
+  actionSession.value = session;
+  showSessionActions.value = true;
+};
+
+const onSessionAction = async (action) => {
+  showSessionActions.value = false;
+  if (!actionSession.value?.session_id) return;
+
+  if (action.value === 'archive' || action.name === '归档') {
+    showToast('归档功能待接入');
+    return;
+  }
+
+  if (action.value === 'delete' || action.name === '删除') {
+    await deleteSessionFromHistory(actionSession.value);
+  }
+};
+
+const deleteSessionFromHistory = async (session) => {
+  try {
+    await showConfirmDialog({
+      title: '删除会话',
+      message: `确认删除「${getSessionTitle(session)}」？此操作不可恢复。`
+    });
+  } catch {
+    return;
+  }
+
+  const deletingCurrent = session.session_id === sessionId.value;
+  const result = await sessionStore.deleteSession(session.session_id);
+  if (result.success) {
+    showToast('会话已删除');
+    if (deletingCurrent) {
+      sessionStore.requestNewChat();
+      resetChatState();
+      router.push('/aichat');
+    }
+    await loadSidebarSessions();
+  } else {
+    showToast(result.message || '删除失败');
+  }
 };
 
 const isActiveSession = (session) => session?.session_id && session.session_id === sessionId.value;
@@ -953,22 +1015,57 @@ const loadSessionHistory = (session) => {
 }
 
 .session-item {
-  display: block;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  gap: 4px;
+  align-items: flex-start;
   width: 100%;
   margin-bottom: 8px;
-  padding: 11px 12px;
+  padding: 0;
   border: 1px solid transparent;
   border-radius: 12px;
   background: transparent;
   color: inherit;
-  text-align: left;
-  cursor: pointer;
 }
 
 .session-item.active {
   border-color: #c8ddf4;
   background: #ffffff;
   box-shadow: 0 10px 28px rgba(31, 122, 224, 0.1);
+}
+
+.session-item:hover {
+  background: #ffffff;
+}
+
+.session-open-area,
+.session-menu-button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.session-open-area {
+  min-width: 0;
+  padding: 11px 0 11px 12px;
+  text-align: left;
+}
+
+.session-menu-button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: 8px 8px 0 0;
+  border-radius: 8px;
+  color: #7d8b99;
+}
+
+.session-menu-button:hover {
+  background: #eef5ff;
+  color: var(--primary);
 }
 
 .session-title,
