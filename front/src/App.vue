@@ -1,5 +1,5 @@
 <template>
-  <div class="app">
+  <div class="app" :class="{ 'app--wide': $route.path.startsWith('/aichat') }">
     <router-view v-slot="{ Component }">
       <template v-if="$route.meta.keepAlive">
         <keep-alive>
@@ -59,5 +59,12 @@ html, body {
   margin: 0 auto;
   height: 100%;
   background-color: #f5f7f8;
+}
+
+@media screen and (min-width: 901px) {
+  .app.app--wide {
+    max-width: none;
+    width: 100%;
+  }
 }
 </style>

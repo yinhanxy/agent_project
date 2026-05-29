@@ -1,138 +1,272 @@
 <template>
   <div class="ai-chat-page">
-    <header class="chat-header">
-      <div class="header-top">
-        <div class="title-block">
-          <span class="eyebrow">
-            <van-icon name="cluster-o" size="13" />
-            智能知识库
-          </span>
-          <h1>知识问答</h1>
+    <aside class="desktop-rail" aria-label="主导航">
+      <button class="rail-logo" type="button" @click="createNewChat" aria-label="新对话">AI</button>
+      <button class="rail-button active" type="button" title="AI问答" aria-label="AI问答" @click="router.push('/aichat')">
+        <van-icon name="chat-o" size="21" />
+      </button>
+      <button class="rail-button" type="button" title="会话管理" aria-label="会话管理" @click="goToSessions">
+        <van-icon name="comment-circle-o" size="21" />
+      </button>
+      <button class="rail-button" type="button" title="知识库" aria-label="知识库" @click="goToKnowledge">
+        <van-icon name="orders-o" size="21" />
+      </button>
+      <button
+        v-if="userStore.isAdmin"
+        class="rail-button"
+        type="button"
+        title="账号管理"
+        aria-label="账号管理"
+        @click="router.push('/admin/accounts')"
+      >
+        <van-icon name="manager-o" size="21" />
+      </button>
+      <button class="rail-button rail-bottom" type="button" title="我的" aria-label="我的" @click="router.push('/my')">
+        <van-icon name="user-o" size="21" />
+      </button>
+    </aside>
+
+    <aside class="history-sidebar" aria-label="历史会话">
+      <div class="history-header">
+        <div>
+          <span class="side-eyebrow">历史上下文</span>
+          <h2>会话</h2>
         </div>
-        <button class="header-action" type="button" @click="goToSessions">
-          <van-icon name="clock-o" size="17" />
-          <span>会话</span>
+        <button class="new-chat-button" type="button" @click="createNewChat">
+          <van-icon name="plus" size="14" />
+          新对话
         </button>
       </div>
 
-      <div class="status-row">
-        <span class="status-pill">
-          <span class="status-dot"></span>
-          RAG 已连接
-        </span>
-        <span class="status-copy">混合检索 · 来源可追踪</span>
+      <label class="history-search">
+        <van-icon name="search" size="16" />
+        <input v-model="sessionSearch" type="search" placeholder="搜索会话" />
+      </label>
+
+      <div v-if="!isLoggedIn" class="history-empty">
+        <van-icon name="contact-o" size="28" />
+        <strong>未登录</strong>
+        <span>登录后显示会话</span>
       </div>
 
-      <div class="knowledge-strip" aria-label="知识库快捷入口">
-        <button
-          v-for="source in knowledgeChips"
-          :key="source"
-          class="knowledge-chip"
-          type="button"
-          @click="goToKnowledge"
-        >
-          <van-icon name="description-o" size="13" />
-          {{ source }}
-        </button>
+      <div v-else-if="sessionStore.isLoading && sessionStore.sessions.length === 0" class="history-empty">
+        <van-loading size="22" />
+        <span>加载中</span>
       </div>
-    </header>
 
-    <main class="chat-content">
-      <div class="messages-container" ref="messagesContainer">
-        <section class="insight-panel">
-          <div>
-            <span class="panel-kicker">今日工作台</span>
-            <h2>把文档变成可追问的答案</h2>
-          </div>
-          <div class="panel-metrics">
-            <span>向量检索</span>
-            <span>BM25</span>
-            <span>重排序</span>
-          </div>
-        </section>
+      <div v-else-if="sessionStore.sessions.length === 0" class="history-empty">
+        <van-icon name="chat-o" size="28" />
+        <strong>暂无会话</strong>
+        <span>开始一次新对话</span>
+      </div>
 
-        <div
-          v-for="(message, index) in messages"
-          :key="index"
-          :class="['message-row', message.role === 'user' ? 'user-message' : 'ai-message']"
-        >
-          <div v-if="message.role === 'assistant'" class="message-avatar">AI</div>
-          <div class="message-stack">
-            <div v-if="message.role === 'assistant'" class="message-meta">
-              <span>RAG Assistant</span>
-              <span v-if="message.usedRag" class="rag-badge">
-                <van-icon name="search" size="11" />
-                已检索
-              </span>
-            </div>
-
-            <div class="message-content">
-              <div class="markdown-body" v-html="formatMessage(message.content)"></div>
-            </div>
-
-            <div
-              v-if="message.role === 'assistant' && message.citations && message.citations.length"
-              class="citations-section"
+      <div v-else class="history-list">
+        <template v-for="group in filteredSessionGroups" :key="group.label">
+          <div v-if="group.items.length" class="history-group">
+            <div class="history-group-label">{{ group.label }}</div>
+            <button
+              v-for="session in group.items"
+              :key="session.session_id"
+              class="session-item"
+              :class="{ active: isActiveSession(session) }"
+              type="button"
+              @click="selectSession(session)"
             >
-              <button class="citations-toggle" type="button" @click="message.showCitations = !message.showCitations">
-                <span>
-                  <van-icon name="description-o" size="12" />
-                  参考来源 {{ message.citations.length }}
+              <span class="session-title">{{ getSessionTitle(session) }}</span>
+              <span class="session-preview">{{ getSessionPreview(session) }}</span>
+              <span class="session-meta">
+                <span>{{ formatSessionTime(session.updated_at || session.created_at) || '时间未知' }}</span>
+                <span>{{ getMessageCount(session) || '继续' }}</span>
+              </span>
+            </button>
+          </div>
+        </template>
+      </div>
+    </aside>
+
+    <section class="chat-shell">
+      <header class="chat-header">
+        <div class="header-top">
+          <div class="title-block">
+            <span class="eyebrow">
+              <van-icon name="cluster-o" size="13" />
+              智能知识库
+            </span>
+            <h1>知识问答</h1>
+          </div>
+          <button class="header-action" type="button" @click="goToSessions">
+            <van-icon name="clock-o" size="17" />
+            <span>会话</span>
+          </button>
+        </div>
+
+        <div class="status-row">
+          <span class="status-pill">
+            <span class="status-dot"></span>
+            RAG 已连接
+          </span>
+          <span class="status-copy">混合检索 · 来源可追踪</span>
+        </div>
+
+        <div class="knowledge-strip" aria-label="知识库快捷入口">
+          <button
+            v-for="source in knowledgeChips"
+            :key="source"
+            class="knowledge-chip"
+            type="button"
+            @click="goToKnowledge"
+          >
+            <van-icon name="description-o" size="13" />
+            {{ source }}
+          </button>
+        </div>
+      </header>
+
+      <main class="chat-content">
+        <div class="messages-container" ref="messagesContainer">
+          <section class="insight-panel">
+            <div>
+              <span class="panel-kicker">今日工作台</span>
+              <h2>把文档变成可追问的答案</h2>
+            </div>
+            <div class="panel-metrics">
+              <span>向量检索</span>
+              <span>BM25</span>
+              <span>重排序</span>
+            </div>
+          </section>
+
+          <div
+            v-for="(message, index) in messages"
+            :key="index"
+            :class="['message-row', message.role === 'user' ? 'user-message' : 'ai-message']"
+          >
+            <div v-if="message.role === 'assistant'" class="message-avatar">AI</div>
+            <div class="message-stack">
+              <div v-if="message.role === 'assistant'" class="message-meta">
+                <span>RAG Assistant</span>
+                <span v-if="message.usedRag" class="rag-badge">
+                  <van-icon name="search" size="11" />
+                  已检索
                 </span>
-                <van-icon :name="message.showCitations ? 'arrow-up' : 'arrow-down'" size="12" />
-              </button>
-              <div v-if="message.showCitations" class="citations-list">
-                <div v-for="(c, ci) in message.citations" :key="ci" class="citation-item">
-                  <van-icon name="label-o" size="12" color="#6b7c8f" />
-                  <span class="citation-filename">{{ c.filename }}</span>
-                  <span class="citation-score">{{ (c.score * 100).toFixed(0) }}%</span>
+              </div>
+
+              <div class="message-content">
+                <div class="markdown-body" v-html="formatMessage(message.content)"></div>
+              </div>
+
+              <div
+                v-if="message.role === 'assistant' && message.citations && message.citations.length"
+                class="citations-section"
+              >
+                <button class="citations-toggle" type="button" @click="message.showCitations = !message.showCitations">
+                  <span>
+                    <van-icon name="description-o" size="12" />
+                    参考来源 {{ message.citations.length }}
+                  </span>
+                  <van-icon :name="message.showCitations ? 'arrow-up' : 'arrow-down'" size="12" />
+                </button>
+                <div v-if="message.showCitations" class="citations-list">
+                  <div v-for="(c, ci) in message.citations" :key="ci" class="citation-item">
+                    <van-icon name="label-o" size="12" color="#6b7c8f" />
+                    <span class="citation-filename">{{ c.filename }}</span>
+                    <span class="citation-score">{{ (c.score * 100).toFixed(0) }}%</span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div
-              v-if="message.role === 'assistant' && (message.streaming || message.tokens != null)"
-              class="token-usage"
-            >
-              <van-loading v-if="message.streaming" size="13" />
-              <van-icon v-else name="balance-o" size="11" />
-              <span v-if="message.elapsed != null">{{ message.elapsed.toFixed(1) }}s</span>
-              <span v-if="message.tokens != null">· {{ message.tokens }} tokens</span>
+              <div
+                v-if="message.role === 'assistant' && (message.streaming || message.tokens != null)"
+                class="token-usage"
+              >
+                <van-loading v-if="message.streaming" size="13" />
+                <van-icon v-else name="balance-o" size="11" />
+                <span v-if="message.elapsed != null">{{ message.elapsed.toFixed(1) }}s</span>
+                <span v-if="message.tokens != null">· {{ message.tokens }} tokens</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    </main>
+      </main>
 
-    <footer class="composer-shell">
-      <button class="composer-tool" type="button" aria-label="打开知识库" @click="goToKnowledge">
-        <van-icon name="notes-o" size="20" />
-      </button>
-      <van-field
-        v-model="userInput"
-        rows="1"
-        autosize
-        type="textarea"
-        placeholder="向知识库提问..."
-        class="chat-input"
-        @keypress.enter.prevent="sendMessage"
-      />
-      <van-button
-        type="primary"
-        class="send-button"
-        :disabled="isLoading || !userInput.trim()"
-        @click="sendMessage"
-      >
-        <van-icon name="guide-o" size="17" />
-      </van-button>
-    </footer>
+      <footer class="composer-shell">
+        <button class="composer-tool" type="button" aria-label="打开知识库" @click="goToKnowledge">
+          <van-icon name="notes-o" size="20" />
+        </button>
+        <van-field
+          v-model="userInput"
+          rows="1"
+          autosize
+          type="textarea"
+          placeholder="向知识库提问..."
+          class="chat-input"
+          @keypress.enter.prevent="sendMessage"
+        />
+        <van-button
+          type="primary"
+          class="send-button"
+          :disabled="isLoading || !userInput.trim()"
+          @click="sendMessage"
+        >
+          <van-icon name="guide-o" size="17" />
+        </van-button>
+      </footer>
+    </section>
+
+    <aside class="context-sidebar" aria-label="上下文面板">
+      <section class="context-card">
+        <div class="context-card-title">
+          <h3>当前会话</h3>
+          <span>{{ messages.length }} 条</span>
+        </div>
+        <p class="current-session-title">{{ currentSessionTitle }}</p>
+      </section>
+
+      <section class="context-card">
+        <div class="context-card-title">
+          <h3>当前知识库</h3>
+          <button type="button" @click="goToKnowledge">管理</button>
+        </div>
+        <div class="context-list">
+          <div v-for="source in knowledgeChips" :key="source" class="context-row">
+            <span>{{ source }}</span>
+            <strong>可用</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="context-card">
+        <div class="context-card-title">
+          <h3>参考来源</h3>
+          <span>{{ latestCitations.length || 0 }}</span>
+        </div>
+        <div v-if="latestCitations.length" class="context-list">
+          <div v-for="(source, index) in latestCitations" :key="index" class="context-row source-row">
+            <span>{{ source.filename || '来源文档' }}</span>
+            <strong>{{ source.score != null ? `${(source.score * 100).toFixed(0)}%` : '引用' }}</strong>
+          </div>
+        </div>
+        <p v-else class="context-muted">暂无引用</p>
+      </section>
+
+      <section class="context-card">
+        <div class="context-card-title">
+          <h3>检索配置</h3>
+        </div>
+        <div class="context-list">
+          <div class="context-row"><span>模式</span><strong>混合检索</strong></div>
+          <div class="context-row"><span>Top K</span><strong>5</strong></div>
+          <div class="context-row"><span>重排序</span><strong>开启</strong></div>
+        </div>
+      </section>
+    </aside>
 
     <tab-bar />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onActivated, onUnmounted, nextTick, watch } from 'vue';
+import { ref, computed, onMounted, onActivated, onUnmounted, nextTick, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import TabBar from '../components/TabBar.vue';
 import { showToast } from 'vant';
@@ -161,6 +295,7 @@ const messages = ref([
 ]);
 const knowledgeChips = ['FastAPI 文档', 'LangChain 笔记', '课程资料'];
 const userInput = ref('');
+const sessionSearch = ref('');
 const messagesContainer = ref(null);
 const isLoading = ref(false);
 const sessionId = ref('');
@@ -170,6 +305,45 @@ const router = useRouter();
 const route = useRoute();
 const userStore = useUserStore();
 const sessionStore = useSessionStore();
+
+const isLoggedIn = computed(() => Boolean(localStorage.getItem('jwt_token') || userStore.token));
+const latestCitations = computed(() => {
+  const assistantWithSources = [...messages.value]
+    .reverse()
+    .find(message => message.role === 'assistant' && message.citations?.length);
+  return assistantWithSources?.citations || [];
+});
+const currentSessionTitle = computed(() => {
+  const currentSession = sessionStore.currentSession
+    || sessionStore.sessions.find(session => session.session_id === sessionId.value);
+  if (currentSession) return getSessionTitle(currentSession);
+  return sessionId.value ? '当前会话' : '新对话';
+});
+const filteredSessionGroups = computed(() => {
+  const keyword = sessionSearch.value.trim().toLowerCase();
+  const groups = [
+    { label: '今天', items: [] },
+    { label: '昨天', items: [] },
+    { label: '更早', items: [] }
+  ];
+
+  sessionStore.sessions
+    .filter(session => {
+      if (!keyword) return true;
+      return [
+        getSessionTitle(session),
+        getSessionPreview(session),
+        formatSessionTime(session.updated_at || session.created_at)
+      ].some(value => String(value || '').toLowerCase().includes(keyword));
+    })
+    .forEach(session => {
+      const label = getSessionDateGroup(session.updated_at || session.created_at);
+      const group = groups.find(item => item.label === label) || groups[2];
+      group.items.push(session);
+    });
+
+  return groups;
+});
 
 // 配置marked使用marked-highlight插件
 marked.use(markedHighlight({
@@ -366,6 +540,7 @@ const fetchAIResponse = async (userMessage) => {
                 if (!route.params.sessionId) {
                   router.push(`/aichat/${json.session_id}`);
                 }
+                await loadSidebarSessions();
               }
               // 将检索来源附加到最后一条 AI 消息
               if (json.citations && json.citations.length) {
@@ -412,6 +587,95 @@ const goToSessions = () => {
 // 跳转到知识库页面
 const goToKnowledge = () => {
   router.push('/knowledge');
+};
+
+const getUserId = () => userStore.userInfo?.uuid || userStore.userInfo?.id || userStore.userInfo?.user_id;
+
+const loadSidebarSessions = async () => {
+  const token = localStorage.getItem('jwt_token') || userStore.token;
+  if (!token) return;
+
+  if (!userStore.userInfo) {
+    const result = await userStore.getUserInfoDetail();
+    if (!result.success) return;
+  }
+
+  const userId = getUserId();
+  if (userId) {
+    await sessionStore.getUserSessions(userId);
+  }
+};
+
+const createNewChat = () => {
+  sessionStore.requestNewChat();
+  resetChatState();
+  if (route.path !== '/aichat') {
+    router.push('/aichat');
+  }
+};
+
+const selectSession = (session) => {
+  if (!session?.session_id || session.session_id === sessionId.value) return;
+  router.push(`/aichat/${session.session_id}`);
+};
+
+const isActiveSession = (session) => session?.session_id && session.session_id === sessionId.value;
+
+const getSessionTitle = (session) => {
+  if (session?.title) return session.title;
+  if (session?.history?.length) {
+    const firstMessage = session.history[0]?.[0] || '';
+    return firstMessage.length > 24 ? `${firstMessage.substring(0, 24)}...` : firstMessage;
+  }
+  return '新会话';
+};
+
+const getSessionPreview = (session) => {
+  if (session?.history?.length) {
+    const lastPair = session.history[session.history.length - 1];
+    const preview = lastPair?.[0] || lastPair?.[1] || '';
+    return preview.length > 42 ? `${preview.substring(0, 42)}...` : preview;
+  }
+  return session?.updated_at ? '点击继续这段对话' : '继续对话';
+};
+
+const getMessageCount = (session) => {
+  const count = Array.isArray(session?.history) ? session.history.length : 0;
+  return count > 0 ? `${count} 轮` : '';
+};
+
+const formatSessionTime = (timeString) => {
+  if (!timeString) return '';
+  try {
+    const date = new Date(timeString);
+    const now = new Date();
+    const sameYear = date.getFullYear() === now.getFullYear();
+    return date.toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      ...(sameYear ? {} : { year: 'numeric' }),
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+  } catch (error) {
+    return timeString;
+  }
+};
+
+const getSessionDateGroup = (timeString) => {
+  if (!timeString) return '更早';
+  const date = new Date(timeString);
+  if (Number.isNaN(date.getTime())) return '更早';
+
+  const today = new Date();
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const startOfYesterday = new Date(startOfToday);
+  startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+
+  if (date >= startOfToday) return '今天';
+  if (date >= startOfYesterday) return '昨天';
+  return '更早';
 };
 
 // 滚动到底部
@@ -473,14 +737,16 @@ watch(() => route.fullPath, (newFullPath, oldFullPath) => {
   syncWithRoute();
 });
 
-onMounted(() => {
-  syncWithRoute();
+onMounted(async () => {
+  await syncWithRoute();
+  await loadSidebarSessions();
   scrollToBottom();
 });
 
 // keep-alive 缓存的组件再次被激活时（切回 tab）同步一次路由状态
-onActivated(() => {
-  syncWithRoute();
+onActivated(async () => {
+  await syncWithRoute();
+  await loadSidebarSessions();
   scrollToBottom();
 });
 
@@ -501,7 +767,7 @@ const loadSessionHistory = (session) => {
 .ai-chat-page {
   --page-bg: #f5f7f8;
   --surface: #ffffff;
-  --surface-soft: #eef5f5;
+  --surface-soft: #f7fafc;
   --ink: #16202a;
   --muted: #6b7684;
   --line: #dfe7ed;
@@ -509,28 +775,89 @@ const loadSessionHistory = (session) => {
   --primary-deep: #0f4fbf;
   --teal: #178c83;
   --amber: #b9851d;
+  --shadow: 0 18px 50px rgba(20, 42, 68, 0.1);
 
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 76px minmax(280px, 320px) minmax(0, 1fr) minmax(260px, 300px);
+  width: 100vw;
   height: 100dvh;
   min-height: 100vh;
-  padding-bottom: calc(58px + env(safe-area-inset-bottom));
+  padding-bottom: 0;
   background:
-    linear-gradient(180deg, #f8faf9 0%, var(--page-bg) 42%, #eef3f5 100%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(238, 243, 247, 0.9)),
+    radial-gradient(circle at 36% 0%, rgba(29, 111, 232, 0.13), transparent 34%),
+    var(--page-bg);
   color: var(--ink);
   overflow: hidden;
 }
 
-.chat-header {
-  flex-shrink: 0;
-  padding: 18px 18px 12px;
-  background: rgba(248, 250, 249, 0.94);
-  border-bottom: 1px solid rgba(199, 213, 223, 0.72);
-  box-shadow: 0 10px 28px rgba(35, 56, 74, 0.06);
-  backdrop-filter: blur(16px);
+.desktop-rail,
+.history-sidebar,
+.context-sidebar {
+  min-height: 0;
+  border-color: var(--line);
 }
 
-.header-top,
+.desktop-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 12px;
+  border-right: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.rail-logo,
+.rail-button {
+  display: grid;
+  place-items: center;
+  border: 0;
+  cursor: pointer;
+}
+
+.rail-logo {
+  width: 42px;
+  height: 42px;
+  margin-bottom: 6px;
+  border-radius: 12px;
+  background: #102f4c;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 900;
+  box-shadow: 0 12px 28px rgba(16, 47, 76, 0.2);
+}
+
+.rail-button {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: transparent;
+  color: #536579;
+}
+
+.rail-button.active,
+.rail-button:hover {
+  background: #e8f2ff;
+  color: var(--primary);
+}
+
+.rail-bottom {
+  margin-top: auto;
+}
+
+.history-sidebar {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 18px 14px;
+  border-right: 1px solid var(--line);
+  background: rgba(250, 252, 254, 0.92);
+}
+
+.history-header,
+.context-card-title,
+.session-meta,
 .status-row,
 .knowledge-strip,
 .message-row,
@@ -538,14 +865,179 @@ const loadSessionHistory = (session) => {
 .panel-metrics,
 .composer-shell,
 .citation-item,
-.citations-toggle {
+.citations-toggle,
+.context-row,
+.new-chat-button,
+.history-search {
   display: flex;
   align-items: center;
 }
 
+.history-header {
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.side-eyebrow {
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.history-header h2 {
+  margin: 2px 0 0;
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.new-chat-button {
+  justify-content: center;
+  gap: 4px;
+  flex-shrink: 0;
+  height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--primary);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.history-search {
+  gap: 8px;
+  height: 40px;
+  margin-bottom: 12px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--muted);
+}
+
+.history-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.history-search input::placeholder {
+  color: #9aa8b4;
+}
+
+.history-list {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.history-group {
+  margin-top: 12px;
+}
+
+.history-group:first-child {
+  margin-top: 0;
+}
+
+.history-group-label {
+  margin: 0 2px 8px;
+  color: #8795a5;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.session-item {
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 11px 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-item.active {
+  border-color: #c8ddf4;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(31, 122, 224, 0.1);
+}
+
+.session-title,
+.session-preview {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.session-title {
+  margin-bottom: 6px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-preview {
+  color: var(--muted);
+  display: -webkit-box;
+  font-size: 12px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.session-meta {
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 9px;
+  color: #8b99a8;
+  font-size: 11px;
+}
+
+.history-empty {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 8px;
+  flex: 1;
+  min-height: 160px;
+  border: 1px dashed #d4e0e8;
+  border-radius: 14px;
+  color: #8b99a8;
+  text-align: center;
+}
+
+.history-empty strong {
+  color: #526174;
+}
+
+.chat-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.chat-header {
+  padding: 18px 26px 14px;
+  background: rgba(255, 255, 255, 0.82);
+  border-bottom: 1px solid rgba(199, 213, 223, 0.72);
+  backdrop-filter: blur(16px);
+}
+
 .header-top {
   justify-content: space-between;
-  gap: 14px;
+  gap: 20px;
 }
 
 .title-block {
@@ -557,14 +1049,14 @@ const loadSessionHistory = (session) => {
   align-items: center;
   gap: 5px;
   color: var(--teal);
-  font-size: 12px;
-  font-weight: 650;
+  font-size: 13px;
+  font-weight: 800;
   line-height: 1.2;
 }
 
 .title-block h1 {
-  margin: 4px 0 0;
-  font-size: 25px;
+  margin: 5px 0 0;
+  font-size: 28px;
   line-height: 1.15;
   letter-spacing: 0;
   color: var(--ink);
@@ -596,7 +1088,7 @@ const loadSessionHistory = (session) => {
 
 .status-row {
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 13px;
   min-width: 0;
 }
 
@@ -634,7 +1126,7 @@ const loadSessionHistory = (session) => {
 
 .knowledge-strip {
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 13px;
   overflow-x: auto;
   padding-bottom: 2px;
   scrollbar-width: none;
@@ -650,7 +1142,7 @@ const loadSessionHistory = (session) => {
   gap: 5px;
   flex: 0 0 auto;
   min-height: 30px;
-  max-width: 142px;
+  max-width: 168px;
   padding: 0 10px;
   border: 1px solid rgba(102, 127, 150, 0.16);
   border-radius: 8px;
@@ -662,7 +1154,6 @@ const loadSessionHistory = (session) => {
 }
 
 .chat-content {
-  flex: 1;
   min-height: 0;
   overflow: hidden;
 }
@@ -670,31 +1161,33 @@ const loadSessionHistory = (session) => {
 .messages-container {
   height: 100%;
   overflow-y: auto;
-  padding: 14px 14px 12px;
+  padding: 24px 32px 32px;
 }
 
 .insight-panel {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 16px;
-  padding: 13px 14px;
-  border: 1px solid rgba(31, 79, 117, 0.09);
-  border-radius: 8px;
-  background: linear-gradient(135deg, #ffffff 0%, #eef7f6 100%);
-  box-shadow: 0 10px 24px rgba(39, 73, 94, 0.07);
+  align-items: center;
+  min-height: 88px;
+  margin-bottom: 24px;
+  padding: 18px 20px;
+  border: 1px solid #d4e5f1;
+  border-radius: 14px;
+  background: linear-gradient(90deg, #ffffff 0%, #f0fbfa 100%);
+  box-shadow: 0 12px 34px rgba(39, 73, 94, 0.07);
 }
 
 .panel-kicker {
   color: var(--amber);
-  font-size: 11px;
-  font-weight: 750;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .insight-panel h2 {
-  margin: 3px 0 0;
+  margin: 5px 0 0;
   color: #1c2a35;
-  font-size: 15px;
+  font-size: 18px;
   line-height: 1.25;
   letter-spacing: 0;
 }
@@ -707,28 +1200,29 @@ const loadSessionHistory = (session) => {
 }
 
 .panel-metrics span {
-  padding: 4px 6px;
-  border-radius: 6px;
+  padding: 7px 9px;
+  border: 1px solid #e3ebf1;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.78);
   color: #536678;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
 }
 
 .message-row {
-  gap: 8px;
+  gap: 12px;
   align-items: flex-start;
-  margin-bottom: 14px;
+  margin-bottom: 18px;
 }
 
 .message-avatar {
   display: grid;
   place-items: center;
-  flex: 0 0 30px;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
   background: #123451;
   color: #ffffff;
   font-size: 11px;
@@ -737,7 +1231,7 @@ const loadSessionHistory = (session) => {
 }
 
 .message-stack {
-  max-width: min(88%, 560px);
+  max-width: min(82%, 760px);
   min-width: 0;
 }
 
@@ -746,7 +1240,7 @@ const loadSessionHistory = (session) => {
 }
 
 .user-message .message-stack {
-  max-width: min(80%, 520px);
+  max-width: min(76%, 720px);
 }
 
 .message-meta {
@@ -759,8 +1253,8 @@ const loadSessionHistory = (session) => {
 
 .message-content {
   overflow: hidden;
-  padding: 12px 13px;
-  border-radius: 8px;
+  padding: 14px 16px;
+  border-radius: 14px;
   word-break: break-word;
 }
 
@@ -768,7 +1262,7 @@ const loadSessionHistory = (session) => {
   border: 1px solid rgba(199, 213, 223, 0.76);
   background: rgba(255, 255, 255, 0.94);
   color: #263542;
-  box-shadow: 0 10px 24px rgba(39, 73, 94, 0.08);
+  box-shadow: 0 12px 34px rgba(39, 73, 94, 0.08);
 }
 
 .user-message .message-content {
@@ -793,7 +1287,7 @@ const loadSessionHistory = (session) => {
   margin-top: 8px;
   overflow: hidden;
   border: 1px solid rgba(199, 213, 223, 0.75);
-  border-radius: 8px;
+  border-radius: 10px;
   background: rgba(250, 252, 252, 0.92);
 }
 
@@ -856,11 +1350,10 @@ const loadSessionHistory = (session) => {
 }
 
 .composer-shell {
-  flex-shrink: 0;
   gap: 8px;
-  padding: 10px 12px 12px;
+  padding: 14px 24px;
   border-top: 1px solid rgba(199, 213, 223, 0.72);
-  background: rgba(248, 250, 249, 0.96);
+  background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 -10px 28px rgba(35, 56, 74, 0.06);
   backdrop-filter: blur(16px);
 }
@@ -868,11 +1361,11 @@ const loadSessionHistory = (session) => {
 .composer-tool {
   display: grid;
   place-items: center;
-  flex: 0 0 40px;
-  width: 40px;
-  height: 40px;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
   border: 1px solid rgba(102, 127, 150, 0.18);
-  border-radius: 8px;
+  border-radius: 12px;
   background: #ffffff;
   color: #38556e;
 }
@@ -881,7 +1374,7 @@ const loadSessionHistory = (session) => {
   flex: 1;
   min-width: 0;
   border: 1px solid rgba(102, 127, 150, 0.16);
-  border-radius: 8px;
+  border-radius: 12px;
   background: #ffffff;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
@@ -908,14 +1401,106 @@ const loadSessionHistory = (session) => {
 }
 
 .send-button {
-  flex: 0 0 42px;
-  width: 42px;
-  height: 40px;
+  flex: 0 0 48px;
+  width: 48px;
+  height: 44px;
   padding: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: 12px;
   background: linear-gradient(135deg, var(--primary) 0%, var(--primary-deep) 100%);
   box-shadow: 0 10px 18px rgba(29, 111, 232, 0.2);
+}
+
+.context-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  padding: 18px 16px;
+  border-left: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.context-card {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.context-card-title {
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.context-card-title h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.context-card-title span,
+.context-card-title button {
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.context-card-title button {
+  cursor: pointer;
+}
+
+.current-session-title,
+.context-muted {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.context-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.context-row {
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 0;
+  border-top: 1px solid #edf2f6;
+  color: #526174;
+  font-size: 13px;
+}
+
+.context-row:first-child {
+  border-top: 0;
+}
+
+.context-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-row strong {
+  flex-shrink: 0;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.source-row strong {
+  color: var(--amber);
+}
+
+:deep(.app-tabbar.van-tabbar) {
+  display: none;
 }
 
 .send-button.van-button--disabled {
@@ -1040,6 +1625,117 @@ const loadSessionHistory = (session) => {
 .markdown-body :deep(th) {
   background-color: #eef3f5;
   font-weight: 800;
+}
+
+@media screen and (max-width: 1180px) {
+  .ai-chat-page {
+    grid-template-columns: 72px minmax(260px, 300px) minmax(0, 1fr);
+  }
+
+  .context-sidebar {
+    display: none;
+  }
+}
+
+@media screen and (max-width: 900px) {
+  .ai-chat-page {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    padding-bottom: calc(58px + env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, #f8faf9 0%, var(--page-bg) 42%, #eef3f5 100%);
+  }
+
+  .desktop-rail,
+  .history-sidebar,
+  .context-sidebar {
+    display: none;
+  }
+
+  .chat-shell {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    flex-direction: column;
+  }
+
+  .chat-header {
+    flex-shrink: 0;
+    padding: 18px 18px 12px;
+    background: rgba(248, 250, 249, 0.94);
+    box-shadow: 0 10px 28px rgba(35, 56, 74, 0.06);
+  }
+
+  .title-block h1 {
+    font-size: 25px;
+  }
+
+  .chat-content {
+    flex: 1;
+  }
+
+  .messages-container {
+    padding: 14px 14px 12px;
+  }
+
+  .insight-panel {
+    min-height: 0;
+    margin-bottom: 16px;
+    padding: 13px 14px;
+    border-radius: 8px;
+  }
+
+  .insight-panel h2 {
+    font-size: 15px;
+  }
+
+  .panel-metrics span {
+    padding: 4px 6px;
+    border: 0;
+    border-radius: 6px;
+    font-size: 10px;
+  }
+
+  .message-avatar {
+    flex-basis: 30px;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+  }
+
+  .message-stack,
+  .user-message .message-stack {
+    max-width: 86%;
+  }
+
+  .message-content {
+    padding: 12px 13px;
+    border-radius: 8px;
+  }
+
+  .composer-shell {
+    flex-shrink: 0;
+    padding: 10px 12px 12px;
+    background: rgba(248, 250, 249, 0.96);
+  }
+
+  .composer-tool {
+    flex-basis: 40px;
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+  }
+
+  .send-button {
+    flex-basis: 42px;
+    width: 42px;
+    height: 40px;
+    border-radius: 8px;
+  }
+
+  :deep(.app-tabbar.van-tabbar) {
+    display: flex;
+  }
 }
 
 @media screen and (max-width: 380px) {
