@@ -415,6 +415,34 @@ class DepartmentDetailView(AuthenticatedView):
         return Response({"detail": "部门已删除"}, status=status.HTTP_200_OK)
 
 
+class UserSetDeptView(AuthenticatedView):
+    """总管理员：设置某用户所属部门（dept_id 传 null 表示移出部门）"""
+
+    def patch(self, request, uuid) -> Response:
+        if not getattr(request.user, 'is_admin', False):
+            return Response({"detail": "无权限"}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            target = User.objects.get(uuid=uuid)
+        except User.DoesNotExist:
+            return Response({"detail": "用户不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        dept_id = request.data.get('dept_id')
+        if dept_id in (None, "", "null"):
+            target.dept = None
+            target.is_dept_admin = False  # 移出部门同时清掉部门管理员身份
+        else:
+            try:
+                target.dept = Department.objects.get(dept_id=dept_id)
+            except Department.DoesNotExist:
+                return Response({"detail": "部门不存在"}, status=status.HTTP_404_NOT_FOUND)
+        target.save()
+        clear_user_cache(target.uuid)
+        return Response({
+            "uuid": str(target.uuid),
+            "dept_id": str(target.dept_id) if target.dept_id else None,
+        }, status=status.HTTP_200_OK)
+
+
 class UserLogOutView(APIView):
     """用户注销"""
     @swagger_auto_schema(

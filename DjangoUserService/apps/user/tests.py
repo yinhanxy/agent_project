@@ -104,3 +104,40 @@ class DepartmentApiTest(TestCase):
         resp = _auth_client(self.admin).delete(f"/user/departments/{dept.dept_id}/")
         self.assertEqual(resp.status_code, 200)
         self.assertFalse(Department.objects.filter(dept_id=dept.dept_id).exists())
+
+
+class SetDeptApiTest(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="admin", email="admin@example.com", password="pass123",
+            status=UserStatusChoice.ACTIVE, is_admin=True,
+        )
+        self.member = User.objects.create_user(
+            username="m1", email="m1@example.com", password="pass123",
+            status=UserStatusChoice.ACTIVE,
+        )
+        self.dept = Department.objects.create(name="研发部")
+
+    def test_admin_assigns_user_to_department(self):
+        resp = _auth_client(self.admin).patch(
+            f"/user/{self.member.uuid}/set-dept/",
+            {"dept_id": str(self.dept.dept_id)}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.member.refresh_from_db()
+        self.assertEqual(self.member.dept_id, self.dept.dept_id)
+
+    def test_assign_null_clears_department(self):
+        self.member.dept = self.dept
+        self.member.save()
+        resp = _auth_client(self.admin).patch(
+            f"/user/{self.member.uuid}/set-dept/",
+            {"dept_id": None}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.member.refresh_from_db()
+        self.assertIsNone(self.member.dept_id)
+
+    def test_member_cannot_assign_department(self):
+        resp = _auth_client(self.member).patch(
+            f"/user/{self.member.uuid}/set-dept/",
+            {"dept_id": str(self.dept.dept_id)}, format="json")
+        self.assertEqual(resp.status_code, 403)
