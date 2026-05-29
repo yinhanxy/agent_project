@@ -99,6 +99,10 @@ class DepartmentApiTest(TestCase):
             "/user/departments/", {"name": "市场部"}, format="json")
         self.assertEqual(resp.status_code, 403)
 
+    def test_member_cannot_list_department(self):
+        resp = _auth_client(self.member).get("/user/departments/")
+        self.assertEqual(resp.status_code, 403)
+
     def test_admin_can_delete_department(self):
         dept = Department.objects.create(name="待删部门")
         resp = _auth_client(self.admin).delete(f"/user/departments/{dept.dept_id}/")
@@ -128,6 +132,7 @@ class SetDeptApiTest(TestCase):
 
     def test_assign_null_clears_department(self):
         self.member.dept = self.dept
+        self.member.is_dept_admin = True
         self.member.save()
         resp = _auth_client(self.admin).patch(
             f"/user/{self.member.uuid}/set-dept/",
@@ -135,6 +140,7 @@ class SetDeptApiTest(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.member.refresh_from_db()
         self.assertIsNone(self.member.dept_id)
+        self.assertFalse(self.member.is_dept_admin)
 
     def test_member_cannot_assign_department(self):
         resp = _auth_client(self.member).patch(

@@ -368,9 +368,11 @@ class UserSetAdminView(AuthenticatedView):
 
 
 class DepartmentListCreateView(AuthenticatedView):
-    """部门列表与创建（仅总管理员可创建）"""
+    """部门列表与创建（仅总管理员）"""
 
     def get(self, request) -> Response:
+        if not getattr(request.user, 'is_admin', False):
+            return Response({"detail": "无权限"}, status=status.HTTP_403_FORBIDDEN)
         depts = Department.objects.all().order_by('created_at')
         data = [{"dept_id": str(d.dept_id), "name": d.name} for d in depts]
         return Response({"departments": data, "total": len(data)}, status=status.HTTP_200_OK)
