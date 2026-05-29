@@ -12,7 +12,7 @@
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.views import APIView
 
-from .models import User
+from .models import User, Department
 from .serializers import LoginSerializer, UserSerializer, ResetPasswordSerializer, RegisterSerializer, UserUpdateSerializer
 from datetime import datetime
 from .authentications import JWTAuthentication, JWTTokenGenerator
@@ -365,6 +365,54 @@ class UserSetAdminView(AuthenticatedView):
         target.save()
         clear_user_cache(target.uuid)
         return Response({"uuid": str(target.uuid), "is_admin": target.is_admin}, status=status.HTTP_200_OK)
+
+
+class DepartmentListCreateView(AuthenticatedView):
+    """部门列表与创建（仅总管理员可创建）"""
+
+    def get(self, request) -> Response:
+        depts = Department.objects.all().order_by('created_at')
+        data = [{"dept_id": str(d.dept_id), "name": d.name} for d in depts]
+        return Response({"departments": data, "total": len(data)}, status=status.HTTP_200_OK)
+
+    def post(self, request) -> Response:
+        if not getattr(request.user, 'is_admin', False):
+            return Response({"detail": "无权限"}, status=status.HTTP_403_FORBIDDEN)
+        name = (request.data.get('name') or '').strip()
+        if not name:
+            return Response({"detail": "部门名称不能为空"}, status=status.HTTP_400_BAD_REQUEST)
+        if Department.objects.filter(name=name).exists():
+            return Response({"detail": "部门名称已存在"}, status=status.HTTP_400_BAD_REQUEST)
+        dept = Department.objects.create(name=name)
+        return Response({"dept_id": str(dept.dept_id), "name": dept.name}, status=status.HTTP_201_CREATED)
+
+
+class DepartmentDetailView(AuthenticatedView):
+    """部门改名 / 删除（仅总管理员）"""
+
+    def patch(self, request, dept_id) -> Response:
+        if not getattr(request.user, 'is_admin', False):
+            return Response({"detail": "无权限"}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            dept = Department.objects.get(dept_id=dept_id)
+        except Department.DoesNotExist:
+            return Response({"detail": "部门不存在"}, status=status.HTTP_404_NOT_FOUND)
+        name = (request.data.get('name') or '').strip()
+        if not name:
+            return Response({"detail": "部门名称不能为空"}, status=status.HTTP_400_BAD_REQUEST)
+        dept.name = name
+        dept.save()
+        return Response({"dept_id": str(dept.dept_id), "name": dept.name}, status=status.HTTP_200_OK)
+
+    def delete(self, request, dept_id) -> Response:
+        if not getattr(request.user, 'is_admin', False):
+            return Response({"detail": "无权限"}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            dept = Department.objects.get(dept_id=dept_id)
+        except Department.DoesNotExist:
+            return Response({"detail": "部门不存在"}, status=status.HTTP_404_NOT_FOUND)
+        dept.delete()  # User.dept 为 SET_NULL，成员自动解除归属
+        return Response({"detail": "部门已删除"}, status=status.HTTP_200_OK)
 
 
 class UserLogOutView(APIView):

@@ -3,6 +3,7 @@ from .views import (
     LoginView, ResetPasswordView, TokenRefreshView, UserDetailView,
     RegisterView, UserUpdateView, UserLogOutView,
     UserListView, UserSetAdminView,
+    DepartmentListCreateView, DepartmentDetailView,
 )
 
 app_name = 'user'
@@ -17,4 +18,6 @@ urlpatterns = [
     path('logout/', UserLogOutView.as_view(), name='user-logout'),
     path('list/', UserListView.as_view(), name='user-list'),
     path('<str:uuid>/set-admin/', UserSetAdminView.as_view(), name='user-set-admin'),
+    path('departments/', DepartmentListCreateView.as_view(), name='dept-list-create'),
+    path('departments/<str:dept_id>/', DepartmentDetailView.as_view(), name='dept-detail'),
 ]

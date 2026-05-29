@@ -71,3 +71,36 @@ class UserListDeptTest(TestCase):
         self.assertEqual(target["dept_id"], str(self.dept.dept_id))
         self.assertEqual(target["dept_name"], "研发部")
         self.assertTrue(target["is_dept_admin"])
+
+
+class DepartmentApiTest(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="admin", email="admin@example.com", password="pass123",
+            status=UserStatusChoice.ACTIVE, is_admin=True,
+        )
+        self.member = User.objects.create_user(
+            username="m1", email="m1@example.com", password="pass123",
+            status=UserStatusChoice.ACTIVE,
+        )
+
+    def test_admin_can_create_and_list_department(self):
+        c = _auth_client(self.admin)
+        resp = c.post("/user/departments/", {"name": "市场部"}, format="json")
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.json()["name"], "市场部")
+        resp = c.get("/user/departments/")
+        self.assertEqual(resp.status_code, 200)
+        names = [d["name"] for d in resp.json()["departments"]]
+        self.assertIn("市场部", names)
+
+    def test_member_cannot_create_department(self):
+        resp = _auth_client(self.member).post(
+            "/user/departments/", {"name": "市场部"}, format="json")
+        self.assertEqual(resp.status_code, 403)
+
+    def test_admin_can_delete_department(self):
+        dept = Department.objects.create(name="待删部门")
+        resp = _auth_client(self.admin).delete(f"/user/departments/{dept.dept_id}/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(Department.objects.filter(dept_id=dept.dept_id).exists())
