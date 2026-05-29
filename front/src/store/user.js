@@ -11,6 +11,12 @@ const getCsrfToken = () => {
   return cookieValue || '';
 };
 
+const LAST_ACTIVITY_KEY = 'auth_last_activity_at';
+
+const markAuthActivity = () => {
+  localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
+};
+
 export const useUserStore = defineStore('user', {
   state: () => ({
     userInfo: null,
@@ -48,6 +54,7 @@ export const useUserStore = defineStore('user', {
           const token = response.data.token;
           // 将token存入到localStorage
           localStorage.setItem('jwt_token', token);
+          markAuthActivity();
           
           this.$patch({
             userInfo,
@@ -102,6 +109,7 @@ export const useUserStore = defineStore('user', {
         localStorage.removeItem('jwt_token');
         localStorage.removeItem('user-store');
         localStorage.removeItem('user');
+        localStorage.removeItem(LAST_ACTIVITY_KEY);
       }
     },
     
@@ -187,6 +195,7 @@ export const useUserStore = defineStore('user', {
           if (response.data.token) {
             this.token = response.data.token;
             localStorage.setItem('jwt_token', response.data.token);
+            markAuthActivity();
           }
           
           return {
@@ -267,6 +276,7 @@ export const useUserStore = defineStore('user', {
       localStorage.removeItem('jwt_token');
       localStorage.removeItem('user-store');
       localStorage.removeItem('user');
+      localStorage.removeItem(LAST_ACTIVITY_KEY);
     },
 
     // 用户注册
@@ -302,6 +312,7 @@ export const useUserStore = defineStore('user', {
           
           // 保存token到localStorage
           localStorage.setItem('jwt_token', token);
+          markAuthActivity();
           
           // 更新store状态
           this.$patch({
