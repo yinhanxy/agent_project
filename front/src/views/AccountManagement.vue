@@ -128,39 +128,54 @@
       <div class="list-section" v-if="isSuperAdmin">
         <div class="section-header">
           <span class="section-title">部门管理</span>
-          <van-button size="small" plain icon="replay" :loading="loadingDepts" @click="loadDepartments" />
+          <div class="section-actions">
+            <van-button size="small" type="primary" icon="plus" @click="openCreateDept">
+              新建部门
+            </van-button>
+            <van-button size="small" plain icon="replay" :loading="loadingDepts" @click="loadDepartments" />
+          </div>
         </div>
-
-        <van-cell-group inset>
-          <van-field
-            v-model="newDeptName"
-            placeholder="输入新部门名称"
-            :disabled="creatingDept"
-          >
-            <template #button>
-              <van-button size="small" type="primary" :loading="creatingDept" @click="createDept">
-                新建
-              </van-button>
-            </template>
-          </van-field>
-        </van-cell-group>
 
         <van-loading v-if="loadingDepts" size="24px" vertical style="padding:24px 0">加载中</van-loading>
         <van-empty v-else-if="departments.length === 0" description="暂无部门" image-size="80" />
-        <van-cell-group v-else inset style="margin-top:12px">
-          <van-cell
-            v-for="d in departments"
+        <div v-else class="department-list">
+          <section
+            v-for="d in departmentSummaries"
             :key="d.dept_id"
-            :title="d.name"
+            class="department-card"
           >
-            <template #right-icon>
-              <div style="display:flex;align-items:center;gap:8px">
+            <div class="department-card-head">
+              <div class="department-title">
+                <h3>{{ d.name }}</h3>
+                <span>{{ d.memberCount }} 人</span>
+              </div>
+              <div class="department-actions">
                 <van-button size="mini" plain @click="renameDept(d)">改名</van-button>
                 <van-button size="mini" plain type="danger" @click="deleteDept(d)">删除</van-button>
               </div>
-            </template>
-          </van-cell>
-        </van-cell-group>
+            </div>
+
+            <div class="department-stats">
+              <div><span>部门管理员</span><strong>{{ d.deptAdminCount }}</strong></div>
+              <div><span>普通成员</span><strong>{{ d.normalMemberCount }}</strong></div>
+            </div>
+
+            <div v-if="d.members.length" class="department-members">
+              <div v-for="member in d.members" :key="member.uuid" class="department-member">
+                <div class="member-info">
+                  <strong>{{ member.username }}</strong>
+                  <span>{{ member.email || '未填写邮箱' }}</span>
+                </div>
+                <div class="member-tags">
+                  <van-tag v-if="member.is_admin" type="primary">总管理员</van-tag>
+                  <van-tag v-else-if="member.is_dept_admin" type="success">部门管理员</van-tag>
+                  <van-tag v-else type="default">普通成员</van-tag>
+                </div>
+              </div>
+            </div>
+            <div v-else class="department-empty">暂无成员</div>
+          </section>
+        </div>
       </div>
 
       <!-- 说明 -->
@@ -186,6 +201,22 @@
       :description="assignTarget ? `为「${assignTarget.username}」选择部门` : ''"
       @select="onAssignDept"
     />
+
+    <van-dialog
+      v-model:show="showCreateDeptDialog"
+      title="新建部门"
+      show-cancel-button
+      :before-close="beforeCreateDeptClose"
+    >
+      <van-field
+        v-model="newDeptName"
+        label="部门名称"
+        placeholder="请输入部门名称"
+        :disabled="creatingDept"
+        maxlength="32"
+        clearable
+      />
+    </van-dialog>
 
     <template #context>
       <section class="admin-context-card">
@@ -221,6 +252,7 @@ import DesktopRail from '../components/DesktopRail.vue'
 import TabBar from '../components/TabBar.vue'
 import WorkbenchLayout from '../components/WorkbenchLayout.vue'
 import { useUserStore } from '../store/user'
+import { buildDepartmentSummaries } from '../utils/departmentSummary'
 
 const router = useRouter()
 const users = ref([])
@@ -247,6 +279,7 @@ const deptAdminToggling = ref(null)
 // 部门 CRUD
 const newDeptName = ref('')
 const creatingDept = ref(false)
+const showCreateDeptDialog = ref(false)
 
 const getToken = () => localStorage.getItem('jwt_token') || ''
 const authHeader = () => ({ Authorization: `Bearer ${getToken()}` })
@@ -276,6 +309,7 @@ const filteredUsers = computed(() => {
     return roleMatched && textMatched
   })
 })
+const departmentSummaries = computed(() => buildDepartmentSummaries(departments.value, users.value))
 
 const goToRegister = () => {
   router.push('/register')
@@ -369,20 +403,32 @@ const toggleDeptAdmin = async (u) => {
 }
 
 // ── 部门 CRUD ────────────────────────────────────────────────
+const openCreateDept = () => {
+  newDeptName.value = ''
+  showCreateDeptDialog.value = true
+}
+
 const createDept = async () => {
   const name = newDeptName.value.trim()
-  if (!name) { showToast('请输入部门名称'); return }
+  if (!name) { showToast('请输入部门名称'); return false }
   creatingDept.value = true
   try {
     await axios.post('/api/admin/departments', { name }, { headers: authHeader() })
     showToast('部门已创建')
     newDeptName.value = ''
     await loadDepartments()
+    return true
   } catch (e) {
     showToast('创建失败：' + (e.response?.data?.message || e.response?.data?.detail || '未知错误'))
+    return false
   } finally {
     creatingDept.value = false
   }
+}
+
+const beforeCreateDeptClose = async (action) => {
+  if (action !== 'confirm') return true
+  return createDept()
 }
 
 const renameDept = (d) => {
@@ -676,5 +722,146 @@ onActivated(() => {
 .user-role-label {
   font-size: 12px;
   color: #969799;
+}
+
+.department-list {
+  display: grid;
+  gap: 12px;
+}
+
+.department-card {
+  padding: 14px;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+
+.department-card-head,
+.department-actions,
+.department-member,
+.member-tags {
+  display: flex;
+  align-items: center;
+}
+
+.department-card-head {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.department-title {
+  min-width: 0;
+}
+
+.department-title h3 {
+  margin: 0;
+  color: #323233;
+  font-size: 15px;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.department-title span {
+  display: inline-block;
+  margin-top: 3px;
+  color: #969799;
+  font-size: 12px;
+}
+
+.department-actions {
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.department-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.department-stats div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: #f7f8fa;
+  color: #646566;
+  font-size: 12px;
+}
+
+.department-stats strong {
+  color: #323233;
+}
+
+.department-members {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.department-member {
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 48px;
+  padding: 9px 10px;
+  border: 1px solid #eef0f3;
+  border-radius: 10px;
+}
+
+.member-info {
+  min-width: 0;
+}
+
+.member-info strong,
+.member-info span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-info strong {
+  color: #323233;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.member-info span {
+  color: #969799;
+  font-size: 12px;
+}
+
+.member-tags {
+  flex-shrink: 0;
+  justify-content: flex-end;
+}
+
+.department-empty {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #f7f8fa;
+  color: #969799;
+  font-size: 12px;
+  text-align: center;
+}
+
+@media screen and (max-width: 520px) {
+  .department-card-head,
+  .department-member {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .department-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .department-stats {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
