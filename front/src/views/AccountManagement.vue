@@ -85,17 +85,78 @@
                 style="margin-right:10px;flex-shrink:0"
               />
             </template>
+            <template #value>
+              <div class="user-meta">
+                <div class="user-tags">
+                  <van-tag v-if="u.is_admin" type="primary">总管理员</van-tag>
+                  <van-tag v-else-if="u.is_dept_admin" type="success">部门管理员</van-tag>
+                  <van-tag v-else type="default">普通用户</van-tag>
+                  <van-tag plain type="warning">{{ u.dept_name || '未分配部门' }}</van-tag>
+                </div>
+                <div class="user-actions">
+                  <span class="user-role-label">总管理员</span>
+                  <van-switch
+                    :model-value="u.is_admin"
+                    size="18px"
+                    :disabled="toggling === u.uuid || u.uuid === selfUuid"
+                    :loading="toggling === u.uuid"
+                    @update:model-value="toggleAdmin(u)"
+                  />
+                  <van-button
+                    size="mini"
+                    plain
+                    type="primary"
+                    :disabled="u.is_admin"
+                    @click="openAssignDept(u)"
+                  >分配部门</van-button>
+                  <van-button
+                    size="mini"
+                    plain
+                    :type="u.is_dept_admin ? 'danger' : 'success'"
+                    :disabled="!u.dept_id || u.is_admin || deptAdminToggling === u.uuid"
+                    :loading="deptAdminToggling === u.uuid"
+                    @click="toggleDeptAdmin(u)"
+                  >{{ u.is_dept_admin ? '取消部管' : '任命部管' }}</van-button>
+                </div>
+              </div>
+            </template>
+          </van-cell>
+        </van-cell-group>
+      </div>
+
+      <!-- 部门管理 -->
+      <div class="list-section" v-if="isSuperAdmin">
+        <div class="section-header">
+          <span class="section-title">部门管理</span>
+          <van-button size="small" plain icon="replay" :loading="loadingDepts" @click="loadDepartments" />
+        </div>
+
+        <van-cell-group inset>
+          <van-field
+            v-model="newDeptName"
+            placeholder="输入新部门名称"
+            :disabled="creatingDept"
+          >
+            <template #button>
+              <van-button size="small" type="primary" :loading="creatingDept" @click="createDept">
+                新建
+              </van-button>
+            </template>
+          </van-field>
+        </van-cell-group>
+
+        <van-loading v-if="loadingDepts" size="24px" vertical style="padding:24px 0">加载中</van-loading>
+        <van-empty v-else-if="departments.length === 0" description="暂无部门" image-size="80" />
+        <van-cell-group v-else inset style="margin-top:12px">
+          <van-cell
+            v-for="d in departments"
+            :key="d.dept_id"
+            :title="d.name"
+          >
             <template #right-icon>
               <div style="display:flex;align-items:center;gap:8px">
-                <van-tag v-if="u.is_admin" type="primary">管理员</van-tag>
-                <van-tag v-else type="default">普通用户</van-tag>
-                <van-switch
-                  :model-value="u.is_admin"
-                  size="20px"
-                  :disabled="toggling === u.uuid || u.uuid === selfUuid"
-                  :loading="toggling === u.uuid"
-                  @update:model-value="toggleAdmin(u)"
-                />
+                <van-button size="mini" plain @click="renameDept(d)">改名</van-button>
+                <van-button size="mini" plain type="danger" @click="deleteDept(d)">删除</van-button>
               </div>
             </template>
           </van-cell>
@@ -105,7 +166,9 @@
       <!-- 说明 -->
       <div style="padding:0 20px;margin-top:8px">
         <p style="font-size:12px;color:#999;line-height:1.6">
-          · 管理员可创建部门/管理员专属知识库，可访问所有知识库<br>
+          · 总管理员可创建公开/部门/管理员专属知识库，可访问所有知识库<br>
+          · 部门管理员可创建并管理本部门知识库（需先归属某部门）<br>
+          · 任命部门管理员前，该账号需先被分配到某个部门<br>
           · 不能修改自己的权限<br>
           · 权限变更后，对方需退出重新登录才能生效
         </p>
@@ -114,6 +177,15 @@
 
       <tab-bar />
     </div>
+
+    <!-- 分配部门 -->
+    <van-action-sheet
+      v-model:show="showAssignDept"
+      :actions="assignDeptActions"
+      cancel-text="取消"
+      :description="assignTarget ? `为「${assignTarget.username}」选择部门` : ''"
+      @select="onAssignDept"
+    />
 
     <template #context>
       <section class="admin-context-card">
@@ -148,6 +220,7 @@ import axios from 'axios'
 import DesktopRail from '../components/DesktopRail.vue'
 import TabBar from '../components/TabBar.vue'
 import WorkbenchLayout from '../components/WorkbenchLayout.vue'
+import { useUserStore } from '../store/user'
 
 const router = useRouter()
 const users = ref([])
@@ -155,6 +228,25 @@ const loading = ref(false)
 const toggling = ref(null)
 const userSearch = ref('')
 const roleFilter = ref('all')
+
+const userStore = useUserStore()
+const isSuperAdmin = computed(() => userStore.isSuperAdmin)
+
+// ── 部门数据 ──────────────────────────────────────────────────
+const departments = ref([])
+const loadingDepts = ref(false)
+
+// 分配部门
+const showAssignDept = ref(false)
+const assignTarget = ref(null)   // 正在分配部门的用户
+const assigningDept = ref(false)
+
+// 任命部门管理员
+const deptAdminToggling = ref(null)
+
+// 部门 CRUD
+const newDeptName = ref('')
+const creatingDept = ref(false)
 
 const getToken = () => localStorage.getItem('jwt_token') || ''
 const authHeader = () => ({ Authorization: `Bearer ${getToken()}` })
@@ -201,6 +293,136 @@ const loadUsers = async () => {
   }
 }
 
+const loadDepartments = async () => {
+  if (!isSuperAdmin.value) return
+  loadingDepts.value = true
+  try {
+    const res = await axios.get('/api/admin/departments', { headers: authHeader() })
+    departments.value = res.data?.departments || []
+  } catch (e) {
+    showToast('加载部门失败：' + (e.response?.data?.message || e.response?.data?.detail || '未知错误'))
+  } finally {
+    loadingDepts.value = false
+  }
+}
+
+// ── 分配部门 ────────────────────────────────────────────────
+const openAssignDept = (u) => {
+  assignTarget.value = u
+  showAssignDept.value = true
+}
+
+// 部门分配 action-sheet 选项：各部门 + 「移出部门」
+const assignDeptActions = computed(() => {
+  const actions = departments.value.map(d => ({ name: d.name, dept_id: d.dept_id }))
+  actions.push({ name: '移出部门', dept_id: null, color: '#ee0a24' })
+  return actions
+})
+
+const onAssignDept = async (action) => {
+  const u = assignTarget.value
+  if (!u) return
+  assigningDept.value = true
+  try {
+    await axios.patch(
+      `/api/admin/users/${u.uuid}/set-dept`,
+      { dept_id: action.dept_id },
+      { headers: authHeader() }
+    )
+    showToast(action.dept_id ? `已分配到「${action.name}」` : '已移出部门')
+    await loadUsers()   // 重新拉取，刷新 dept_name / is_dept_admin
+  } catch (e) {
+    showToast('操作失败：' + (e.response?.data?.message || e.response?.data?.detail || '未知错误'))
+  } finally {
+    assigningDept.value = false
+    assignTarget.value = null
+  }
+}
+
+// ── 任命/取消部门管理员 ──────────────────────────────────────
+const toggleDeptAdmin = async (u) => {
+  if (!u.dept_id) { showToast('请先为该账号分配部门'); return }
+  const next = !u.is_dept_admin
+  const action = next ? '任命' : '取消'
+  try {
+    await showConfirmDialog({
+      title: `${action}部门管理员`,
+      message: `确认${action} ${u.username} 为「${u.dept_name}」的部门管理员？`,
+    })
+  } catch {
+    return
+  }
+  deptAdminToggling.value = u.uuid
+  try {
+    const res = await axios.patch(
+      `/api/admin/users/${u.uuid}/set-dept-admin`,
+      { is_dept_admin: next },
+      { headers: authHeader() }
+    )
+    u.is_dept_admin = res.data?.is_dept_admin ?? next
+    showToast(`已${action}部门管理员`)
+  } catch (e) {
+    showToast('操作失败：' + (e.response?.data?.message || e.response?.data?.detail || '未知错误'))
+  } finally {
+    deptAdminToggling.value = null
+  }
+}
+
+// ── 部门 CRUD ────────────────────────────────────────────────
+const createDept = async () => {
+  const name = newDeptName.value.trim()
+  if (!name) { showToast('请输入部门名称'); return }
+  creatingDept.value = true
+  try {
+    await axios.post('/api/admin/departments', { name }, { headers: authHeader() })
+    showToast('部门已创建')
+    newDeptName.value = ''
+    await loadDepartments()
+  } catch (e) {
+    showToast('创建失败：' + (e.response?.data?.message || e.response?.data?.detail || '未知错误'))
+  } finally {
+    creatingDept.value = false
+  }
+}
+
+const renameDept = (d) => {
+  showConfirmDialog({
+    title: '重命名部门',
+    message: `将「${d.name}」重命名为：`,
+    // Vant 的 confirmDialog 无输入框，用 prompt 兜底（桌面端浏览器原生输入）
+  }).then(async () => {
+    const name = window.prompt('请输入新的部门名称', d.name)
+    if (name === null) return
+    const trimmed = name.trim()
+    if (!trimmed) { showToast('部门名称不能为空'); return }
+    try {
+      await axios.patch(`/api/admin/departments/${d.dept_id}`, { name: trimmed }, { headers: authHeader() })
+      showToast('已重命名')
+      await loadDepartments()
+      await loadUsers()  // 成员的 dept_name 随之更新
+    } catch (e) {
+      showToast('重命名失败：' + (e.response?.data?.message || e.response?.data?.detail || '未知错误'))
+    }
+  }).catch(() => {})
+}
+
+const deleteDept = (d) => {
+  showConfirmDialog({
+    title: '删除部门',
+    message: `确认删除「${d.name}」？该部门成员将被移出部门（其部门管理员身份一并解除）。`,
+    confirmButtonColor: '#ee0a24',
+  }).then(async () => {
+    try {
+      await axios.delete(`/api/admin/departments/${d.dept_id}`, { headers: authHeader() })
+      showToast('部门已删除')
+      await loadDepartments()
+      await loadUsers()
+    } catch (e) {
+      showToast('删除失败：' + (e.response?.data?.message || e.response?.data?.detail || '未知错误'))
+    }
+  }).catch(() => {})
+}
+
 const toggleAdmin = async (u) => {
   const action = u.is_admin ? '取消' : '授予'
   try {
@@ -228,8 +450,11 @@ const toggleAdmin = async (u) => {
   }
 }
 
-// 页面已开启 keep-alive：用 onActivated 保证每次进入都刷新用户列表（首次挂载也会触发）
-onActivated(loadUsers)
+// 页面已开启 keep-alive：用 onActivated 保证每次进入都刷新用户列表与部门（首次挂载也会触发）
+onActivated(() => {
+  loadUsers()
+  loadDepartments()
+})
 </script>
 
 <style scoped>
@@ -429,5 +654,27 @@ onActivated(loadUsers)
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+
+.user-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.user-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.user-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.user-role-label {
+  font-size: 12px;
+  color: #969799;
 }
 </style>
