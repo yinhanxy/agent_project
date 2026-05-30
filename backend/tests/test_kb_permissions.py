@@ -59,3 +59,64 @@ def test_filter_with_kb_ids():
 
 def test_filter_without_kb_ids_personal_only():
     assert assemble_rag_filter("u1", False, []) == {"user_id": {"$eq": "u1"}}
+
+
+# ── DB 集成：list_accessible_kbs 部门可见性 ──────────────────────────────────
+
+pytest.importorskip("aiosqlite")
+from app.services.kb_service import kb_service  # noqa: E402
+
+
+async def test_dept_member_sees_own_dept_kb(sqlite_db):
+    await kb_service.create_kb("owner", "d1库", scope="dept", dept_id="d1")
+    await kb_service.create_kb("owner", "d2库", scope="dept", dept_id="d2")
+    kbs = await kb_service.list_accessible_kbs("member", is_admin=False, dept_id="d1")
+    names = {k["name"] for k in kbs}
+    assert "d1库" in names           # 本部门库自动可见
+    assert "d2库" not in names       # 他部门库不可见
+
+
+async def test_no_dept_user_sees_no_dept_kb(sqlite_db):
+    await kb_service.create_kb("owner", "d1库", scope="dept", dept_id="d1")
+    kbs = await kb_service.list_accessible_kbs("member", is_admin=False, dept_id=None)
+    assert "d1库" not in {k["name"] for k in kbs}
+
+
+async def test_company_kb_visible_to_all(sqlite_db):
+    await kb_service.create_kb("owner", "公司库", scope="company")
+    kbs = await kb_service.list_accessible_kbs("member", is_admin=False, dept_id=None)
+    assert "公司库" in {k["name"] for k in kbs}
+
+
+async def test_admin_sees_all(sqlite_db):
+    await kb_service.create_kb("owner", "d1库", scope="dept", dept_id="d1")
+    await kb_service.create_kb("owner", "admin库", scope="admin")
+    kbs = await kb_service.list_accessible_kbs("boss", is_admin=True)
+    assert {"d1库", "admin库"} <= {k["name"] for k in kbs}
+
+
+# ── DB 集成：check_permission 部门规则 ────────────────────────────────────────
+
+async def test_super_admin_full_access(sqlite_db):
+    r = await kb_service.create_kb("owner", "admin库", scope="admin")
+    assert await kb_service.check_permission(
+        "anyone", r["kb_id"], "admin", is_admin=True) is True
+
+
+async def test_dept_member_read_only(sqlite_db):
+    r = await kb_service.create_kb("owner", "d1库", scope="dept", dept_id="d1")
+    kb_id = r["kb_id"]
+    assert await kb_service.check_permission("m", kb_id, "viewer", dept_id="d1") is True
+    assert await kb_service.check_permission("m", kb_id, "editor", dept_id="d1") is False
+
+
+async def test_dept_admin_manage(sqlite_db):
+    r = await kb_service.create_kb("owner", "d1库", scope="dept", dept_id="d1")
+    assert await kb_service.check_permission(
+        "da", r["kb_id"], "admin", dept_id="d1", is_dept_admin=True) is True
+
+
+async def test_other_dept_denied(sqlite_db):
+    r = await kb_service.create_kb("owner", "d1库", scope="dept", dept_id="d1")
+    assert await kb_service.check_permission(
+        "m2", r["kb_id"], "viewer", dept_id="d2", is_dept_admin=True) is False

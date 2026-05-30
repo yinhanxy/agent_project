@@ -140,15 +140,23 @@ class KBService:
                 perm_rows = (await db.execute(select(KBPermission).where(cond))).scalars().all()
                 granted_kb_ids = list({p.kb_id for p in perm_rows})
 
+                # 可见性：被显式授权的库 + 全公司库 +（若有部门）本部门 dept 库
+                visible_clause = or_(
+                    KnowledgeBase.kb_id.in_(granted_kb_ids),
+                    KnowledgeBase.scope == "company",
+                )
+                if dept_id:
+                    visible_clause = or_(
+                        visible_clause,
+                        and_(
+                            KnowledgeBase.scope == "dept",
+                            KnowledgeBase.dept_id == dept_id,
+                        ),
+                    )
+
                 rows = (await db.execute(
                     select(KnowledgeBase).where(
-                        and_(
-                            KnowledgeBase.scope != "admin",
-                            or_(
-                                KnowledgeBase.kb_id.in_(granted_kb_ids),
-                                KnowledgeBase.scope == "company",
-                            ),
-                        )
+                        and_(KnowledgeBase.scope != "admin", visible_clause)
                     )
                 )).scalars().all()
 
@@ -172,7 +180,8 @@ class KBService:
     # ── 权限检查 ──────────────────────────────────────────────────────────────
 
     async def check_permission(
-        self, user_id: str, kb_id: str, required_role: str = "viewer", is_admin: bool = False
+        self, user_id: str, kb_id: str, required_role: str = "viewer",
+        is_admin: bool = False, dept_id: Optional[str] = None, is_dept_admin: bool = False,
     ) -> bool:
         async with AsyncSessionLocal() as db:
             kb_row = (await db.execute(
@@ -181,6 +190,16 @@ class KBService:
 
             if not kb_row:
                 return False
+
+            # 总管理员：跨部门全权
+            if is_admin:
+                return True
+
+            # dept 范围：本部门成员只读，本部门管理员可管，他部门走显式授权
+            if kb_row.scope == "dept" and dept_id and kb_row.dept_id == dept_id:
+                if is_dept_admin:
+                    return True
+                return _ROLE_RANK.get(required_role, 0) <= _ROLE_RANK["viewer"]
 
             # admin 范围：仅拥有显式权限的用户可访问（普通用户一律拒绝）
             if kb_row.scope == "admin":
