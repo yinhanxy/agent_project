@@ -173,9 +173,7 @@
               <van-button class="create-kb-button" block type="primary" icon="plus" @click="showCreateKb = true">
                 创建知识库
               </van-button>
-              <p class="section-note">
-                {{ isAdmin ? '管理员：可创建个人/公开/部门/管理员专属知识库' : '可创建个人（私有）或公开知识库' }}
-              </p>
+              <p class="section-note">{{ createKbNote }}</p>
             </div>
 
             <!-- KB 列表（按 scope 分组） -->
@@ -199,13 +197,19 @@
                       @click="openKb(kb)"
                     >
                       <template #right-icon>
-                        <van-icon
-                          name="ellipsis"
-                          size="20"
-                          color="#969799"
-                          style="padding: 4px 0 4px 8px"
-                          @click.stop="openKbMenu(kb, $event)"
-                        />
+                        <div style="display:flex;align-items:center;gap:6px">
+                          <van-tag v-if="kb.scope === 'dept' && kb.dept_id" plain type="primary">
+                            {{ deptNameOf(kb.dept_id) }}
+                          </van-tag>
+                          <van-icon
+                            v-if="canManageKb(kb)"
+                            name="ellipsis"
+                            size="20"
+                            color="#969799"
+                            style="padding: 4px 0 4px 8px"
+                            @click.stop="openKbMenu(kb, $event)"
+                          />
+                        </div>
                       </template>
                     </van-cell>
                   </van-cell-group>
@@ -242,9 +246,9 @@
           <template #input>
             <van-radio-group v-model="newKb.scope" direction="horizontal" style="flex-wrap:wrap;gap:8px">
               <van-radio name="personal">个人（私有）</van-radio>
-              <van-radio name="company">公开</van-radio>
-              <van-radio v-if="isAdmin" name="dept">部门</van-radio>
-              <van-radio v-if="isAdmin" name="admin">管理员专属</van-radio>
+              <van-radio v-if="isSuperAdmin" name="company">公开</van-radio>
+              <van-radio v-if="canCreateDeptKb" name="dept">部门</van-radio>
+              <van-radio v-if="isSuperAdmin" name="admin">管理员专属</van-radio>
             </van-radio-group>
           </template>
         </van-field>
@@ -299,7 +303,7 @@
         <div class="list-section">
           <div class="section-header">
             <span class="section-title">文档列表</span>
-            <van-button size="small" icon="plus" type="primary" plain @click="triggerKbUpload">上传</van-button>
+            <van-button v-if="canManageKb(currentKb)" size="small" icon="plus" type="primary" plain @click="triggerKbUpload">上传</van-button>
           </div>
           <input ref="kbFileInputRef" type="file" multiple accept=".pdf,.txt,.md,.docx,.pptx"
             style="display:none" @change="handleKbFileSelect" />
@@ -314,7 +318,7 @@
               :icon="getFileIcon(doc.filename)"
             >
               <template #right-icon>
-                <van-icon name="delete-o" color="#ee0a24" size="18" style="padding:4px"
+                <van-icon v-if="canManageKb(currentKb)" name="delete-o" color="#ee0a24" size="18" style="padding:4px"
                   @click.stop="confirmDeleteDoc(doc)" />
               </template>
             </van-cell>
@@ -417,7 +421,35 @@ import WorkbenchLayout from '../components/WorkbenchLayout.vue'
 import { useUserStore } from '../store/user'
 
 const userStore = useUserStore()
-const isAdmin = computed(() => userStore.isAdmin)
+const isSuperAdmin = computed(() => userStore.isSuperAdmin)
+const isDeptAdmin = computed(() => userStore.isDeptAdmin)
+const myDeptId = computed(() => userStore.deptId)
+const myDeptName = computed(() => userStore.deptName)
+// 兼容旧引用：isAdmin 等价于 super_admin
+const isAdmin = isSuperAdmin
+// 是否可创建“部门库”：总管理员或部门管理员（部门管理员须已归属部门）
+const canCreateDeptKb = computed(() => isSuperAdmin.value || (isDeptAdmin.value && !!myDeptId.value))
+const createKbNote = computed(() => {
+  if (isSuperAdmin.value) return '总管理员：可创建个人 / 公开 / 部门 / 管理员专属知识库'
+  if (canCreateDeptKb.value) return '部门管理员：可创建个人或本部门知识库'
+  return '可创建个人（私有）知识库'
+})
+
+// 解析某 dept_id 的展示名：本部门用 user_info 的 dept_name，否则回退 id
+const deptNameOf = (deptId) => {
+  if (!deptId) return ''
+  if (deptId === myDeptId.value && myDeptName.value) return myDeptName.value
+  return deptId  // 跨部门时仅展示 id（前端不持有全量部门表）
+}
+
+// 是否可管理（改名/删）某库
+const canManageKb = (kb) => {
+  if (!kb) return false
+  if (isSuperAdmin.value) return true
+  if (kb.scope === 'personal') return kb.owner_id === currentUserUuid.value
+  if (kb.scope === 'dept') return isDeptAdmin.value && !!myDeptId.value && kb.dept_id === myDeptId.value
+  return false  // company / admin 仅 super_admin
+}
 
 const activeTab = ref('personal')
 const fileInputRef = ref(null)
@@ -469,11 +501,12 @@ const currentUserUuid = computed(() =>
 )
 
 const kbActionOptions = computed(() => {
-  const actions = [{ name: '重命名', color: '#323233' }]
-  if (isAdmin.value || actionKb.value?.owner_id === currentUserUuid.value) {
-    actions.push({ name: '删除', color: '#ee0a24' })
-  }
-  return actions
+  const kb = actionKb.value
+  if (!kb || !canManageKb(kb)) return []
+  return [
+    { name: '重命名', color: '#323233' },
+    { name: '删除', color: '#ee0a24' },
+  ]
 })
 
 const getToken = () => localStorage.getItem('jwt_token') || ''
@@ -597,7 +630,12 @@ const beforeCloseCreateKb = async (action) => {
   }
   creatingKb.value = true
   try {
-    await axios.post('/api/kb', newKb.value, { headers: authHeader() })
+    const payload = { ...newKb.value }
+    // 部门管理员创建部门库时，归属到自己的部门；总管理员由后端按需处理
+    if (payload.scope === 'dept' && isDeptAdmin.value && myDeptId.value) {
+      payload.dept_id = myDeptId.value
+    }
+    await axios.post('/api/kb', payload, { headers: authHeader() })
     showToast('知识库创建成功')
     newKb.value = { name: '', description: '', scope: 'personal' }
     await loadKbs()
