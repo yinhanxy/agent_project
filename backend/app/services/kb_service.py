@@ -246,8 +246,14 @@ class KBService:
         principal_id: str,
         principal_type: str,
         role: str,
+        is_admin: bool = False,
+        dept_id: Optional[str] = None,
+        is_dept_admin: bool = False,
     ) -> None:
-        if not await self.check_permission(grantor_id, kb_id, required_role="admin"):
+        if not await self.check_permission(
+            grantor_id, kb_id, required_role="admin",
+            is_admin=is_admin, dept_id=dept_id, is_dept_admin=is_dept_admin,
+        ):
             raise PermissionError(f"用户 {grantor_id} 无权管理知识库 {kb_id}")
 
         async with AsyncSessionLocal() as db:
@@ -276,9 +282,13 @@ class KBService:
         logger.info(f"[KB] 授权 kb={kb_id} → {principal_id}({principal_type}) role={role}")
 
     async def remove_member(
-        self, kb_id: str, actor_id: str, principal_id: str, principal_type: str
+        self, kb_id: str, actor_id: str, principal_id: str, principal_type: str,
+        is_admin: bool = False, dept_id: Optional[str] = None, is_dept_admin: bool = False,
     ) -> None:
-        if not await self.check_permission(actor_id, kb_id, required_role="admin"):
+        if not await self.check_permission(
+            actor_id, kb_id, required_role="admin",
+            is_admin=is_admin, dept_id=dept_id, is_dept_admin=is_dept_admin,
+        ):
             raise PermissionError(f"用户 {actor_id} 无权管理知识库 {kb_id}")
 
         async with AsyncSessionLocal() as db:
@@ -299,10 +309,14 @@ class KBService:
     # ── 更新 KB ───────────────────────────────────────────────────────────────
 
     async def update_kb(
-        self, kb_id: str, user_id: str, name: str, description: Optional[str] = None
+        self, kb_id: str, user_id: str, name: str, description: Optional[str] = None,
+        is_admin: bool = False, dept_id: Optional[str] = None, is_dept_admin: bool = False,
     ) -> Dict[str, Any]:
         """重命名知识库（需 editor 及以上权限）"""
-        if not await self.check_permission(user_id, kb_id, required_role="editor"):
+        if not await self.check_permission(
+            user_id, kb_id, required_role="editor",
+            is_admin=is_admin, dept_id=dept_id, is_dept_admin=is_dept_admin,
+        ):
             raise PermissionError(f"用户 {user_id} 无权修改知识库 {kb_id}")
 
         async with AsyncSessionLocal() as db:
@@ -324,11 +338,17 @@ class KBService:
 
     # ── 删除 KB ───────────────────────────────────────────────────────────────
 
-    async def delete_kb(self, kb_id: str, user_id: str) -> List[str]:
+    async def delete_kb(
+        self, kb_id: str, user_id: str,
+        is_admin: bool = False, dept_id: Optional[str] = None, is_dept_admin: bool = False,
+    ) -> List[str]:
         """
         删除知识库元数据及权限记录，返回该 KB 下所有 doc_id（调用方负责清理向量）。
         """
-        if not await self.check_permission(user_id, kb_id, required_role="admin"):
+        if not await self.check_permission(
+            user_id, kb_id, required_role="admin",
+            is_admin=is_admin, dept_id=dept_id, is_dept_admin=is_dept_admin,
+        ):
             raise PermissionError(f"用户 {user_id} 无权删除知识库 {kb_id}")
 
         async with AsyncSessionLocal() as db:
@@ -356,8 +376,14 @@ class KBService:
 
     # ── 成员列表 ──────────────────────────────────────────────────────────────
 
-    async def list_members(self, kb_id: str, user_id: str) -> List[Dict[str, Any]]:
-        if not await self.check_permission(user_id, kb_id, required_role="viewer"):
+    async def list_members(
+        self, kb_id: str, user_id: str,
+        is_admin: bool = False, dept_id: Optional[str] = None, is_dept_admin: bool = False,
+    ) -> List[Dict[str, Any]]:
+        if not await self.check_permission(
+            user_id, kb_id, required_role="viewer",
+            is_admin=is_admin, dept_id=dept_id, is_dept_admin=is_dept_admin,
+        ):
             raise PermissionError(f"用户 {user_id} 无权查看知识库 {kb_id} 成员")
 
         async with AsyncSessionLocal() as db:

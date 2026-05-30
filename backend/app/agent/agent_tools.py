@@ -6,7 +6,7 @@ from app.core.logger_handler import logger
 from app.rag.rag_service import rag_service
 from app.rag.reorder_service import reorder_service
 from app.services.kb_service import kb_service
-from app.utils.auth_utils import decode_django_jwt
+from app.utils.auth_utils import decode_django_jwt, RequestIdentity
 
 # rag_summary_tools 调用后把结构化 citations 存入此 ContextVar，
 # 由 AgentLoop.stream 在「工具执行紧邻处」同步读取并固化进事件流传出。
@@ -20,28 +20,21 @@ def get_rag_citations() -> list:
     return _citations_var.get()
 
 
-async def _build_rag_filter(user_id: str) -> Optional[dict]:
-    """构建当前用户可访问范围的向量库/BM25 过滤条件"""
-    if not user_id:
-        logger.warning("[rag_summary_tools] 未拿到 user_id，本次检索不做用户隔离过滤")
+async def _build_rag_filter(identity: Optional[RequestIdentity]) -> Optional[dict]:
+    """按当前请求身份构建向量库/BM25 过滤条件（部门隔离）。"""
+    if not identity or not identity.user_id:
+        logger.warning("[rag_summary_tools] 未拿到身份/user_id，本次检索不做用户隔离过滤")
         return None
-    accessible_kbs = await kb_service.list_accessible_kbs(user_id)
-    accessible_kb_ids = [kb["kb_id"] for kb in accessible_kbs]
-    if accessible_kb_ids:
-        return {
-            "$or": [
-                {"user_id": {"$eq": user_id}},          # 当前用户的全部文档
-                {"kb_id": {"$in": accessible_kb_ids}},  # 可访问的公开/共享 KB
-            ]
-        }
-    return {"user_id": {"$eq": user_id}}
+    return await kb_service.build_accessible_filter(
+        identity.user_id, is_admin=identity.is_admin, dept_id=identity.dept_id
+    )
 
 
 # ── Tool implementations ─────────────────────────────────────────────────────
 
-async def rag_summary_tools(query: str, user_id: str = "") -> str:
-    logger.info(f"[rag_summary_tools] user_id={user_id or '<空>'}")
-    filter_meta = await _build_rag_filter(user_id)
+async def rag_summary_tools(query: str, identity: Optional[RequestIdentity] = None) -> str:
+    logger.info(f"[rag_summary_tools] user_id={(identity.user_id if identity else '') or '<空>'}")
+    filter_meta = await _build_rag_filter(identity)
     result = await rag_service.get_documents_and_summary(query, filter_meta=filter_meta)
     summary = result.get("summary", "")
     citations = result.get("citations", [])

@@ -11,10 +11,10 @@ from app.core.logger_handler import logger
 from app.rag.vector_store import VectorStoreService
 from app.rag.rag_service import rag_service
 from app.rag.reorder_service import reorder_service
-from app.agent.agent import get_agent_response
 from app.services import session_manager as sm
 from app.services.document_service import document_service
-from app.services.kb_service import kb_service
+from app.services.kb_service import kb_service, can_create_kb
+from app.utils.auth_utils import RequestIdentity
 
 
 ALLOWED_EXTENSIONS = {".pdf", ".txt", ".md", ".pptx", ".docx"}
@@ -62,23 +62,17 @@ class ChatService:
 
     # ── 对话 ──────────────────────────────────────────────────────────────────
 
-    async def handle_agent_query(
-        self, query: str, session_id: Optional[str], user_id: str
-    ) -> Tuple[str, dict, str]:
-        session_id = session_id or str(uuid.uuid4())
-        await sm.session_manager.ensure_session_writable(session_id, user_id)
-        history = await sm.session_manager.get_history(session_id, user_id)
-        result = await get_agent_response(query, history)
-        response = result.get("response")
-        steps = result.get("steps", [])
-        await sm.session_manager.add_message(session_id, user_id, query, response)
-        return session_id, response, steps
-
     async def handle_rag_query(self, query: str) -> str:
         return await rag_service.rag_summary(query)
 
-    async def handle_rag_query_with_citations(self, query: str) -> Dict[str, Any]:
-        return await rag_service.get_documents_and_summary(query)
+    async def handle_rag_query_with_citations(
+        self, query: str, identity: RequestIdentity
+    ) -> Dict[str, Any]:
+        # 与 agent 路径一致的用户/部门过滤，避免全库越权检索
+        filter_meta = await kb_service.build_accessible_filter(
+            identity.user_id, is_admin=identity.is_admin, dept_id=identity.dept_id,
+        )
+        return await rag_service.get_documents_and_summary(query, filter_meta=filter_meta)
 
     # ── 会话管理 ──────────────────────────────────────────────────────────────
 
@@ -105,8 +99,9 @@ class ChatService:
     # ── 知识库：上传 ──────────────────────────────────────────────────────────
 
     async def handle_add_vector_single(
-        self, file: UploadFile, user_id: str, kb_id: str = None
+        self, file: UploadFile, identity: RequestIdentity, kb_id: str = None
     ) -> str:
+        user_id = identity.user_id
         if file.size and file.size > MAX_SINGLE_SIZE:
             raise HTTPException(status_code=400, detail="文件大小不能超过 20MB")
 
@@ -115,7 +110,11 @@ class ChatService:
         _check_file_type(content, file.filename)
 
         if kb_id:
-            has_perm = await kb_service.check_permission(user_id, kb_id, required_role="editor")
+            has_perm = await kb_service.check_permission(
+                user_id, kb_id, required_role="editor",
+                is_admin=identity.is_admin, dept_id=identity.dept_id,
+                is_dept_admin=identity.is_dept_admin,
+            )
             if not has_perm:
                 raise HTTPException(status_code=403, detail=f"无权向知识库 {kb_id} 上传文件")
 
@@ -135,8 +134,9 @@ class ChatService:
         return file.filename
 
     async def handle_add_vector_multiple(
-        self, files: List[UploadFile], user_id: str, kb_id: str = None
+        self, files: List[UploadFile], identity: RequestIdentity, kb_id: str = None
     ) -> List[str]:
+        user_id = identity.user_id
         total_size = 0
         for file in files:
             content = await file.read()
@@ -148,7 +148,11 @@ class ChatService:
             raise HTTPException(status_code=400, detail="文件总大小不能超过 200MB")
 
         if kb_id:
-            has_perm = await kb_service.check_permission(user_id, kb_id, required_role="editor")
+            has_perm = await kb_service.check_permission(
+                user_id, kb_id, required_role="editor",
+                is_admin=identity.is_admin, dept_id=identity.dept_id,
+                is_dept_admin=identity.is_dept_admin,
+            )
             if not has_perm:
                 raise HTTPException(status_code=403, detail=f"无权向知识库 {kb_id} 上传文件")
 
@@ -199,21 +203,31 @@ class ChatService:
     # ── 知识库管理 ────────────────────────────────────────────────────────────
 
     async def handle_create_kb(
-        self, user_id: str, name: str, scope: str, dept_id: str, description: str,
-        is_admin: bool = False,
+        self, identity: RequestIdentity, name: str, scope: str,
+        dept_id: Optional[str], description: str,
     ) -> Dict[str, Any]:
-        if not is_admin and scope in ("dept", "admin"):
-            raise HTTPException(status_code=403, detail="只有管理员才能创建部门或管理员专属知识库")
+        allowed, eff_dept = can_create_kb(
+            scope, identity.is_admin, identity.is_dept_admin,
+            identity.dept_id, dept_id,
+        )
+        if not allowed:
+            raise HTTPException(status_code=403, detail="无权创建该范围/部门的知识库")
         return await kb_service.create_kb(
-            owner_id=user_id, name=name, scope=scope,
-            dept_id=dept_id or None, description=description,
+            owner_id=identity.user_id, name=name, scope=scope,
+            dept_id=eff_dept, description=description,
         )
 
-    async def handle_list_kbs(self, user_id: str, is_admin: bool = False) -> List[Dict[str, Any]]:
-        return await kb_service.list_accessible_kbs(user_id, is_admin=is_admin)
+    async def handle_list_kbs(self, identity: RequestIdentity) -> List[Dict[str, Any]]:
+        return await kb_service.list_accessible_kbs(
+            identity.user_id, is_admin=identity.is_admin, dept_id=identity.dept_id,
+        )
 
-    async def handle_get_kb(self, kb_id: str, user_id: str) -> Dict[str, Any]:
-        has_perm = await kb_service.check_permission(user_id, kb_id, required_role="viewer")
+    async def handle_get_kb(self, kb_id: str, identity: RequestIdentity) -> Dict[str, Any]:
+        has_perm = await kb_service.check_permission(
+            identity.user_id, kb_id, required_role="viewer",
+            is_admin=identity.is_admin, dept_id=identity.dept_id,
+            is_dept_admin=identity.is_dept_admin,
+        )
         if not has_perm:
             raise HTTPException(status_code=403, detail="无权访问该知识库")
         kb = await kb_service.get_kb(kb_id)
@@ -222,57 +236,90 @@ class ChatService:
         return kb_service._kb_to_dict(kb)
 
     async def handle_update_kb(
-        self, kb_id: str, user_id: str, name: str, description: Optional[str]
+        self, kb_id: str, identity: RequestIdentity, name: str, description: Optional[str]
     ) -> Dict[str, Any]:
         try:
-            return await kb_service.update_kb(kb_id, user_id, name, description)
+            return await kb_service.update_kb(
+                kb_id, identity.user_id, name, description,
+                is_admin=identity.is_admin, dept_id=identity.dept_id,
+                is_dept_admin=identity.is_dept_admin,
+            )
         except PermissionError as e:
             raise HTTPException(status_code=403, detail=str(e))
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
 
-    async def handle_delete_kb(self, kb_id: str, user_id: str) -> None:
+    async def handle_delete_kb(self, kb_id: str, identity: RequestIdentity) -> None:
         try:
-            doc_ids = await kb_service.delete_kb(kb_id, user_id)
+            doc_ids = await kb_service.delete_kb(
+                kb_id, identity.user_id,
+                is_admin=identity.is_admin, dept_id=identity.dept_id,
+                is_dept_admin=identity.is_dept_admin,
+            )
             store = VectorStoreService()
             for doc_id in doc_ids:
-                await store.delete_document_by_id(doc_id, user_id)
+                await store.delete_document_by_id(doc_id, identity.user_id)
             rag_service.invalidate_retriever()
         except PermissionError as e:
             raise HTTPException(status_code=403, detail=str(e))
 
     async def handle_add_kb_member(
-        self, kb_id: str, actor_id: str, principal_id: str, principal_type: str, role: str
+        self, kb_id: str, identity: RequestIdentity,
+        principal_id: str, principal_type: str, role: str
     ) -> None:
         try:
-            await kb_service.add_member(kb_id, actor_id, principal_id, principal_type, role)
+            await kb_service.add_member(
+                kb_id, identity.user_id, principal_id, principal_type, role,
+                is_admin=identity.is_admin, dept_id=identity.dept_id,
+                is_dept_admin=identity.is_dept_admin,
+            )
         except PermissionError as e:
             raise HTTPException(status_code=403, detail=str(e))
 
     async def handle_remove_kb_member(
-        self, kb_id: str, actor_id: str, principal_id: str, principal_type: str
+        self, kb_id: str, identity: RequestIdentity, principal_id: str, principal_type: str
     ) -> None:
         try:
-            await kb_service.remove_member(kb_id, actor_id, principal_id, principal_type)
+            await kb_service.remove_member(
+                kb_id, identity.user_id, principal_id, principal_type,
+                is_admin=identity.is_admin, dept_id=identity.dept_id,
+                is_dept_admin=identity.is_dept_admin,
+            )
         except PermissionError as e:
             raise HTTPException(status_code=403, detail=str(e))
 
-    async def handle_list_kb_members(self, kb_id: str, user_id: str) -> List[Dict[str, Any]]:
+    async def handle_list_kb_members(
+        self, kb_id: str, identity: RequestIdentity
+    ) -> List[Dict[str, Any]]:
         try:
-            return await kb_service.list_members(kb_id, user_id)
+            return await kb_service.list_members(
+                kb_id, identity.user_id,
+                is_admin=identity.is_admin, dept_id=identity.dept_id,
+                is_dept_admin=identity.is_dept_admin,
+            )
         except PermissionError as e:
             raise HTTPException(status_code=403, detail=str(e))
 
-    async def handle_list_kb_documents(self, kb_id: str, user_id: str) -> List[Dict[str, Any]]:
-        has_perm = await kb_service.check_permission(user_id, kb_id, required_role="viewer")
+    async def handle_list_kb_documents(
+        self, kb_id: str, identity: RequestIdentity
+    ) -> List[Dict[str, Any]]:
+        has_perm = await kb_service.check_permission(
+            identity.user_id, kb_id, required_role="viewer",
+            is_admin=identity.is_admin, dept_id=identity.dept_id,
+            is_dept_admin=identity.is_dept_admin,
+        )
         if not has_perm:
             raise HTTPException(status_code=403, detail="无权访问该知识库")
         return await document_service.list_by_kb(kb_id)
 
     async def handle_kb_query(
-        self, kb_id: str, query: str, user_id: str
+        self, kb_id: str, query: str, identity: RequestIdentity
     ) -> Dict[str, Any]:
-        has_perm = await kb_service.check_permission(user_id, kb_id, required_role="viewer")
+        has_perm = await kb_service.check_permission(
+            identity.user_id, kb_id, required_role="viewer",
+            is_admin=identity.is_admin, dept_id=identity.dept_id,
+            is_dept_admin=identity.is_dept_admin,
+        )
         if not has_perm:
             raise HTTPException(status_code=403, detail="无权查询该知识库")
         filter_meta = {"kb_id": kb_id}

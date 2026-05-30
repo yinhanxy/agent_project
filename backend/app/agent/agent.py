@@ -14,6 +14,7 @@ from app.agent.agent_middleware import (
 from app.agent.agent_tools import TOOLS, TOOL_SCHEMAS, get_rag_citations
 from app.core.logger_handler import logger
 from app.services import session_manager as sm
+from app.utils.auth_utils import RequestIdentity
 from app.utils.prompt_loader import load_prompt
 
 # ── token 估算 ────────────────────────────────────────────────────────────────
@@ -128,78 +129,28 @@ class AgentLoop:
 
     # ── 工具执行 ──────────────────────────────────────────────────────────────
 
-    async def _execute_tool(self, name: str, arguments: str, user_id: str = "") -> str:
+    async def _execute_tool(
+        self, name: str, arguments: str, identity: "Optional[RequestIdentity]" = None
+    ) -> str:
         tool_fn = self.tools.get(name)
         if tool_fn is None:
             return f"工具 {name} 不存在"
         try:
             args = json.loads(arguments) if arguments.strip() else {}
-            # rag_summary_tools 需要请求级身份做权限过滤，由调用方显式注入 user_id
+            # rag_summary_tools 需要请求级身份做权限过滤，由调用方显式注入 identity
             # （不走 ContextVar，避免跨异步生成器边界丢值导致越权检索）
             if name == "rag_summary_tools":
-                args["user_id"] = user_id
+                args["identity"] = identity
             return str(await tool_fn(**args))
         except Exception as e:
             logger.error(f"[Tool] {name} 执行异常: {e}", exc_info=True)
             return f"工具执行失败: {e}"
 
-    # ── 非流式执行 ────────────────────────────────────────────────────────────
-
-    @traceable
-    async def run(self, query: str, history: list = None) -> dict:
-        """完整执行，返回 {response, steps}"""
-        messages = self._build_messages(history, query)
-        steps = []
-        on_agent_start(messages)
-
-        max_rounds = _max_tool_rounds()
-        for round_idx in range(max_rounds + 1):
-            on_model_call(messages)
-            # 最后一轮禁用工具，强制模型给出文字答复，保证循环必然终止
-            last_round = round_idx == max_rounds
-            response = await self.client.chat.completions.create(
-                model=self._model_name(),
-                messages=messages,
-                tools=self.tool_schemas,
-                tool_choice="none" if last_round else "auto",
-            )
-            msg = response.choices[0].message
-            on_model_response(bool(msg.tool_calls), len(msg.content or ""))
-
-            if not msg.tool_calls:
-                result = msg.content or ""
-                on_agent_end(result, steps)
-                return {"response": result, "steps": steps}
-
-            # 将 assistant 消息（含 tool_calls）追加到上下文
-            messages.append(msg.model_dump(exclude_unset=True))
-
-            for tc in msg.tool_calls:
-                on_tool_call(tc.function.name, tc.function.arguments)
-                result = await self._execute_tool(tc.function.name, tc.function.arguments)
-                on_tool_result(tc.function.name, result)
-
-                steps.append({
-                    "tool": tc.function.name,
-                    "tool_input": tc.function.arguments,
-                    "tool_output": result,
-                })
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": result,
-                })
-
-        # 兜底：达到工具调用上限仍未给出文字答复
-        fallback = "（已达到工具调用次数上限，请重试或换个问法）"
-        on_agent_end(fallback, steps)
-        return {"response": fallback, "steps": steps}
-
     # ── 流式执行 ──────────────────────────────────────────────────────────────
 
     @traceable
     async def stream(
-        self, query: str, history: list = None, user_id: str = ""
+        self, query: str, history: list = None, identity: "Optional[RequestIdentity]" = None
     ) -> AsyncGenerator[dict, None]:
         """
         真 token 级流式执行。
@@ -301,7 +252,7 @@ class AgentLoop:
             # 顺序执行各工具
             for tc in tool_calls_buf.values():
                 on_tool_call(tc["name"], tc["args"])
-                result = await self._execute_tool(tc["name"], tc["args"], user_id)
+                result = await self._execute_tool(tc["name"], tc["args"], identity)
                 on_tool_result(tc["name"], result)
 
                 # 紧邻工具执行点同步读取 citations 并固化到局部变量；
@@ -333,25 +284,17 @@ class AgentLoop:
 agent_loop = AgentLoop()
 
 
-# ── 对外接口（与旧 agent.py 签名兼容）───────────────────────────────────────
-
-async def get_agent_response(
-    query: str,
-    history: Optional[List[tuple]] = None,
-    **kwargs,
-) -> dict:
-    """非流式调用，返回 {response: str, steps: list}"""
-    return await agent_loop.run(query, history)
-
+# ── 对外接口 ────────────────────────────────────────────────────────────────
 
 @traceable
 async def get_agent_stream_response(
     query: str,
     session_id: str,
-    user_id: str,
+    identity: "RequestIdentity",
     **kwargs,
 ) -> AsyncGenerator[str, None]:
     """SSE 流式调用，yield Server-Sent Events 格式字符串"""
+    user_id = identity.user_id
     history = await sm.session_manager.get_history(session_id, user_id)
     logger.info(f"[Agent流式] 开始 user={user_id} session={session_id}")
 
@@ -363,7 +306,7 @@ async def get_agent_stream_response(
     total_tokens = 0
     citations: list = []
 
-    async for event in agent_loop.stream(query, history, user_id=user_id):
+    async for event in agent_loop.stream(query, history, identity=identity):
         if event["type"] == "token":
             full_response.append(event["data"])
             yield f"data: {json.dumps({'type': 'response', 'content': event['data']}, ensure_ascii=False)}\n\n"

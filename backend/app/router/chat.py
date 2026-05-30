@@ -5,7 +5,7 @@ import os
 
 import requests
 from fastapi.routing import APIRouter
-from fastapi import UploadFile, File, Depends, HTTPException, Query
+from fastapi import UploadFile, File, Depends, HTTPException, Query, Body
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -18,7 +18,10 @@ from app.schemas.models import (
     KBCreateRequest, KBInfo, KBListResponse, KBMemberRequest,
     KBQueryRequest, KBQueryResponse, Citation, KBUpdateRequest,
 )
-from app.utils.auth_utils import get_current_user_id, get_current_user_is_admin
+from app.utils.auth_utils import (
+    get_current_user_id, get_current_user_is_admin,
+    get_current_identity, RequestIdentity,
+)
 from app.core.success_response import success_response
 from app.core.rate_limit import rate_limit
 
@@ -71,10 +74,109 @@ async def admin_set_admin(
     )
     return resp.json()
 
+
+# ── 部门管理代理（转发 Django，仅总管理员）────────────────────────────────────
+
+async def _proxy_django(method: str, path: str, token: str, json_body=None):
+    """转发到 Django 账号服务。清系统代理（proxies=None）避免 127.0.0.1 被代理拦截致 ReadTimeout。"""
+    loop = asyncio.get_event_loop()
+    resp = await loop.run_in_executor(
+        None,
+        lambda: requests.request(
+            method,
+            f"{DJANGO_API_URL}{path}",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json=json_body,
+            proxies={"http": None, "https": None},
+            timeout=15,
+        ),
+    )
+    return resp.json()
+
+
+@chat_router.get("/admin/departments")
+async def admin_list_departments(
+    is_admin: bool = Depends(get_current_user_is_admin),
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+):
+    """管理员：部门列表"""
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="无权限")
+    return await _proxy_django("GET", "/user/departments/", credentials.credentials)
+
+
+@chat_router.post("/admin/departments")
+async def admin_create_department(
+    body: dict = Body(...),
+    is_admin: bool = Depends(get_current_user_is_admin),
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+):
+    """管理员：创建部门（body: {name}）"""
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="无权限")
+    return await _proxy_django("POST", "/user/departments/", credentials.credentials, body)
+
+
+@chat_router.patch("/admin/departments/{dept_id}")
+async def admin_update_department(
+    dept_id: str,
+    body: dict = Body(...),
+    is_admin: bool = Depends(get_current_user_is_admin),
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+):
+    """管理员：部门改名（body: {name}）"""
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="无权限")
+    return await _proxy_django("PATCH", f"/user/departments/{dept_id}/", credentials.credentials, body)
+
+
+@chat_router.delete("/admin/departments/{dept_id}")
+async def admin_delete_department(
+    dept_id: str,
+    is_admin: bool = Depends(get_current_user_is_admin),
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+):
+    """管理员：删除部门"""
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="无权限")
+    return await _proxy_django("DELETE", f"/user/departments/{dept_id}/", credentials.credentials)
+
+
+@chat_router.patch("/admin/users/{user_uuid}/set-dept")
+async def admin_set_user_dept(
+    user_uuid: str,
+    body: dict = Body(...),
+    is_admin: bool = Depends(get_current_user_is_admin),
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+):
+    """管理员：设置用户所属部门（body: {dept_id|null}）"""
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="无权限")
+    return await _proxy_django(
+        "PATCH", f"/user/{user_uuid}/set-dept/", credentials.credentials, body)
+
+
+@chat_router.patch("/admin/users/{user_uuid}/set-dept-admin")
+async def admin_set_user_dept_admin(
+    user_uuid: str,
+    body: dict = Body(...),
+    is_admin: bool = Depends(get_current_user_is_admin),
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+):
+    """管理员：任命/取消部门管理员（body: {is_dept_admin}）"""
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="无权限")
+    return await _proxy_django(
+        "PATCH", f"/user/{user_uuid}/set-dept-admin/", credentials.credentials, body)
+
+
 @chat_router.post("/agent/query/stream")
 async def query_stream(
         request: QueryRequest,
-        user_id: str = Depends(get_current_user_id),
+        identity: RequestIdentity = Depends(get_current_identity),
         router_service: ChatService = Depends(get_router_service),
         _: None = Depends(rate_limit(limit=10, window=60))
 ):
@@ -82,11 +184,11 @@ async def query_stream(
     # 如果没有提供session_id，自动生成一个
     session_id = request.session_id or str(uuid.uuid4())
     if request.session_id:
-        await router_service.handle_ensure_session_writable(request.session_id, user_id)
-    
+        await router_service.handle_ensure_session_writable(request.session_id, identity.user_id)
+
     # 直接调用get_agent_stream_response函数
     return StreamingResponse(
-        get_agent_stream_response(request.query, session_id, user_id),
+        get_agent_stream_response(request.query, session_id, identity),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -98,11 +200,12 @@ async def query_stream(
 @chat_router.post("/rag/query", response_model=RAGResponse)
 async def query_rag(
         request: RAGRequest,
+        identity: RequestIdentity = Depends(get_current_identity),
         router_service: ChatService = Depends(get_router_service),
         _: None = Depends(rate_limit(limit=15, window=60))
 ):
-    """RAG 检索（返回摘要 + 来源引用）"""
-    result = await router_service.handle_rag_query_with_citations(request.query)
+    """RAG 检索（返回摘要 + 来源引用，按当前用户可见范围过滤）"""
+    result = await router_service.handle_rag_query_with_citations(request.query, identity)
     if result.get("error") == "retrieval_failed":
         raise HTTPException(status_code=503, detail=result.get("summary", "检索服务暂时不可用"))
     citations = [Citation(**c) for c in result.get("citations", [])]
@@ -170,12 +273,12 @@ async def get_user_sessions(
 @chat_router.post("/vector/add/single")
 async def add_vector_single(
         file: UploadFile = File(...),
-        user_id: str = Depends(get_current_user_id),
+        identity: RequestIdentity = Depends(get_current_identity),
         router_service: ChatService = Depends(get_router_service),
         _: None = Depends(rate_limit(limit=30, window=60))
 ):
     """上传文件，将文件保存到向量数据库，仅支持TXT和PDF"""
-    filename = await router_service.handle_add_vector_single(file, user_id)
+    filename = await router_service.handle_add_vector_single(file, identity)
     return success_response(message=f"文件 {filename} 已成功上传并存储到向量数据库")
 
 
@@ -183,12 +286,12 @@ async def add_vector_single(
 @chat_router.post("/vector/add/multiple")
 async def add_vector_multiple(
         files: List[UploadFile] = File(..., description="要上传的文件列表，仅支持PDF和TXT格式"),
-        user_id: str = Depends(get_current_user_id),
+        identity: RequestIdentity = Depends(get_current_identity),
         router_service: ChatService = Depends(get_router_service),
         _: None = Depends(rate_limit(limit=30, window=60))
 ):
     """上传多个文件，将文件保存到向量数据库，仅支持TXT和PDF"""
-    filenames = await router_service.handle_add_vector_multiple(files, user_id)
+    filenames = await router_service.handle_add_vector_multiple(files, identity)
     return success_response(message=f"文件 {filenames} 已成功上传并存储到向量数据库")
 
 
@@ -244,43 +347,40 @@ async def reorder_documents(
 @chat_router.post("/kb")
 async def create_kb(
     request: KBCreateRequest,
-    user_id: str = Depends(get_current_user_id),
-    is_admin: bool = Depends(get_current_user_is_admin),
+    identity: RequestIdentity = Depends(get_current_identity),
     router_service: ChatService = Depends(get_router_service),
 ):
-    """创建知识库（company/dept 范围仅管理员可创建）"""
+    """创建知识库（personal 任意；dept 限本部门管理员/总管理员；company/admin 仅总管理员）"""
     kb = await router_service.handle_create_kb(
-        user_id=user_id,
+        identity=identity,
         name=request.name,
         scope=request.scope,
         dept_id=request.dept_id,
         description=request.description,
-        is_admin=is_admin,
     )
     return success_response(data=kb)
 
 
 @chat_router.get("/kb/list")
 async def list_kbs(
-    user_id: str = Depends(get_current_user_id),
-    is_admin: bool = Depends(get_current_user_is_admin),
+    identity: RequestIdentity = Depends(get_current_identity),
     router_service: ChatService = Depends(get_router_service),
 ):
-    """列出用户可访问的知识库（管理员返回全部，普通用户仅返回公开）"""
-    kbs = await router_service.handle_list_kbs(user_id, is_admin=is_admin)
+    """列出用户可访问的知识库（个人库 + 本部门库 + 公司库；管理员返回全部）"""
+    kbs = await router_service.handle_list_kbs(identity)
     return success_response(
-        data={"kbs": [KBInfo(**kb) for kb in kbs], "total": len(kbs), "is_admin": is_admin}
+        data={"kbs": [KBInfo(**kb) for kb in kbs], "total": len(kbs), "is_admin": identity.is_admin}
     )
 
 
 @chat_router.get("/kb/{kb_id}")
 async def get_kb(
     kb_id: str,
-    user_id: str = Depends(get_current_user_id),
+    identity: RequestIdentity = Depends(get_current_identity),
     router_service: ChatService = Depends(get_router_service),
 ):
     """获取知识库详情"""
-    kb = await router_service.handle_get_kb(kb_id, user_id)
+    kb = await router_service.handle_get_kb(kb_id, identity)
     return success_response(data=KBInfo(**kb))
 
 
@@ -288,22 +388,22 @@ async def get_kb(
 async def update_kb(
     kb_id: str,
     request: KBUpdateRequest,
-    user_id: str = Depends(get_current_user_id),
+    identity: RequestIdentity = Depends(get_current_identity),
     router_service: ChatService = Depends(get_router_service),
 ):
     """重命名知识库（需 editor 以上权限）"""
-    kb = await router_service.handle_update_kb(kb_id, user_id, request.name, request.description)
+    kb = await router_service.handle_update_kb(kb_id, identity, request.name, request.description)
     return success_response(data=KBInfo(**kb))
 
 
 @chat_router.delete("/kb/{kb_id}")
 async def delete_kb(
     kb_id: str,
-    user_id: str = Depends(get_current_user_id),
+    identity: RequestIdentity = Depends(get_current_identity),
     router_service: ChatService = Depends(get_router_service),
 ):
-    """删除知识库（仅 admin）"""
-    await router_service.handle_delete_kb(kb_id, user_id)
+    """删除知识库（需 admin 权限：库管理员 / 本部门管理员 / 总管理员）"""
+    await router_service.handle_delete_kb(kb_id, identity)
     return success_response(message=f"知识库 {kb_id} 已删除")
 
 
@@ -311,13 +411,13 @@ async def delete_kb(
 async def add_kb_member(
     kb_id: str,
     request: KBMemberRequest,
-    user_id: str = Depends(get_current_user_id),
+    identity: RequestIdentity = Depends(get_current_identity),
     router_service: ChatService = Depends(get_router_service),
 ):
-    """添加 / 更新知识库成员权限（仅 admin）"""
+    """添加 / 更新知识库成员权限（需 admin 权限）"""
     await router_service.handle_add_kb_member(
         kb_id=kb_id,
-        actor_id=user_id,
+        identity=identity,
         principal_id=request.principal_id,
         principal_type=request.principal_type,
         role=request.role,
@@ -330,33 +430,33 @@ async def remove_kb_member(
     kb_id: str,
     principal_id: str,
     principal_type: str = "user",
-    user_id: str = Depends(get_current_user_id),
+    identity: RequestIdentity = Depends(get_current_identity),
     router_service: ChatService = Depends(get_router_service),
 ):
-    """移除知识库成员（仅 admin）"""
-    await router_service.handle_remove_kb_member(kb_id, user_id, principal_id, principal_type)
+    """移除知识库成员（需 admin 权限）"""
+    await router_service.handle_remove_kb_member(kb_id, identity, principal_id, principal_type)
     return success_response(message="成员已移除")
 
 
 @chat_router.get("/kb/{kb_id}/members")
 async def list_kb_members(
     kb_id: str,
-    user_id: str = Depends(get_current_user_id),
+    identity: RequestIdentity = Depends(get_current_identity),
     router_service: ChatService = Depends(get_router_service),
 ):
     """获取知识库成员列表"""
-    members = await router_service.handle_list_kb_members(kb_id, user_id)
+    members = await router_service.handle_list_kb_members(kb_id, identity)
     return success_response(data={"members": members, "total": len(members)})
 
 
 @chat_router.get("/kb/{kb_id}/documents")
 async def list_kb_documents(
     kb_id: str,
-    user_id: str = Depends(get_current_user_id),
+    identity: RequestIdentity = Depends(get_current_identity),
     router_service: ChatService = Depends(get_router_service),
 ):
     """获取知识库文档列表"""
-    docs = await router_service.handle_list_kb_documents(kb_id, user_id)
+    docs = await router_service.handle_list_kb_documents(kb_id, identity)
     return success_response(
         data=DocumentListResponse(
             documents=[DocumentInfo(**d) for d in docs],
@@ -369,12 +469,12 @@ async def list_kb_documents(
 async def upload_to_kb(
     kb_id: str,
     file: UploadFile = File(...),
-    user_id: str = Depends(get_current_user_id),
+    identity: RequestIdentity = Depends(get_current_identity),
     router_service: ChatService = Depends(get_router_service),
     _: None = Depends(rate_limit(limit=30, window=60)),
 ):
     """上传文档到指定知识库（需 editor 以上权限）"""
-    filename = await router_service.handle_add_vector_single(file, user_id, kb_id=kb_id)
+    filename = await router_service.handle_add_vector_single(file, identity, kb_id=kb_id)
     return success_response(message=f"文件 {filename} 已成功上传到知识库 {kb_id}")
 
 
@@ -382,12 +482,12 @@ async def upload_to_kb(
 async def query_kb(
     kb_id: str,
     request: KBQueryRequest,
-    user_id: str = Depends(get_current_user_id),
+    identity: RequestIdentity = Depends(get_current_identity),
     router_service: ChatService = Depends(get_router_service),
     _: None = Depends(rate_limit(limit=15, window=60)),
 ):
     """在指定知识库中检索（需 viewer 以上权限），返回摘要 + 来源引用"""
-    result = await router_service.handle_kb_query(kb_id, request.query, user_id)
+    result = await router_service.handle_kb_query(kb_id, request.query, identity)
     if result.get("error") == "retrieval_failed":
         raise HTTPException(status_code=503, detail=result.get("summary", "检索服务暂时不可用"))
     citations = [Citation(**c) for c in result.get("citations", [])]

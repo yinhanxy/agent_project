@@ -120,3 +120,29 @@ async def test_other_dept_denied(sqlite_db):
     r = await kb_service.create_kb("owner", "d1库", scope="dept", dept_id="d1")
     assert await kb_service.check_permission(
         "m2", r["kb_id"], "viewer", dept_id="d2", is_dept_admin=True) is False
+
+
+# ── DB 集成：handle_create_kb 写权限接线 ──────────────────────────────────────
+
+from fastapi import HTTPException  # noqa: E402
+
+from app.router.chat_service import ChatService  # noqa: E402
+from app.utils.auth_utils import RequestIdentity  # noqa: E402
+
+
+async def test_handle_create_company_kb_denied_for_member(sqlite_db):
+    """修复点：普通成员不能再建 company 库"""
+    svc = ChatService()
+    member = RequestIdentity(user_id="m", is_admin=False, dept_id="d1", is_dept_admin=False)
+    with pytest.raises(HTTPException) as exc:
+        await svc.handle_create_kb(member, "公司库", "company", None, "")
+    assert exc.value.status_code == 403
+
+
+async def test_handle_create_dept_kb_by_dept_admin(sqlite_db):
+    """部门管理员建本部门库，dept_id 回填为自身部门"""
+    svc = ChatService()
+    da = RequestIdentity(user_id="da", is_admin=False, dept_id="d1", is_dept_admin=True)
+    kb = await svc.handle_create_kb(da, "研发库", "dept", None, "")
+    stored = await kb_service.get_kb(kb["kb_id"])
+    assert stored.scope == "dept" and stored.dept_id == "d1"
