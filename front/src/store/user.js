@@ -30,7 +30,22 @@ export const useUserStore = defineStore('user', {
     getUserInfo: (state) => state.userInfo,
     getToken: (state) => state.token,
     getLoginStatus: (state) => state.isLogin,
-    getUserBio: (state) => state.userInfo?.bio || state.userBio
+    getUserBio: (state) => state.userInfo?.bio || state.userBio,
+
+    // ── 部门权限角色派生 ──────────────────────────────────────────
+    // 总管理员：state.isAdmin 与 userInfo.is_admin 任一为真（KB 列表会单独刷新 state.isAdmin）
+    isSuperAdmin: (state) => Boolean(state.isAdmin || state.userInfo?.is_admin),
+    // 部门管理员：非总管理员且 is_dept_admin
+    isDeptAdmin: (state) =>
+      !Boolean(state.isAdmin || state.userInfo?.is_admin) && Boolean(state.userInfo?.is_dept_admin),
+    // 统一角色字符串
+    role: (state) => {
+      if (Boolean(state.isAdmin || state.userInfo?.is_admin)) return 'super_admin';
+      if (state.userInfo?.is_dept_admin) return 'dept_admin';
+      return 'member';
+    },
+    deptId: (state) => state.userInfo?.dept_id || null,
+    deptName: (state) => state.userInfo?.dept_name || null
   },
   
   actions: {
