@@ -151,6 +151,82 @@ class RagService:
             logger.warning(f"【RAG】重排序失败: {result['error']}")
             return documents
 
+    async def get_documents_for_agent(
+        self, query: str, filter_meta: Optional[dict] = None
+    ) -> Dict[str, Any]:
+        """只执行检索、重排序和引用构建，让 Agent 负责最终生成。"""
+        try:
+            documents = await self.retrieve_document(query, filter_meta=filter_meta)
+        except RetrievalError as e:
+            return {
+                "documents": [],
+                "summary": "知识库检索服务暂时不可用，请稍后再试或联系管理员。",
+                "citations": [],
+                "error": "retrieval_failed",
+                "error_detail": str(e),
+            }
+
+        try:
+            metadata_map: Dict[str, dict] = {doc.page_content: doc.metadata for doc in documents}
+            document_contents = [doc.page_content for doc in documents]
+
+            reorder_result = await reorder_service.reorder_documents(query, document_contents)
+            if reorder_result["success"]:
+                scored_docs: List[Dict] = reorder_result["documents"]
+            else:
+                logger.warning(f"【RAG】重排序失败: {reorder_result.get('error')}")
+                scored_docs = [{"document": c, "similarity": 0.0} for c in document_contents]
+
+            if not scored_docs:
+                return {
+                    "documents": [],
+                    "summary": "抱歉，我没有找到相关的信息。",
+                    "citations": [],
+                    "error": None,
+                }
+
+            max_score = max(d["similarity"] for d in scored_docs)
+            if max_score < _CONFIDENCE_THRESHOLD:
+                logger.info(f"【RAG】最高置信度 {max_score:.4f} 低于阈值 {_CONFIDENCE_THRESHOLD}，拒绝回答")
+                return {
+                    "documents": [],
+                    "summary": "抱歉，未在知识库中找到与您问题相关的信息，请尝试换个提问方式或上传相关文档。",
+                    "citations": [],
+                    "error": None,
+                }
+
+            max_documents = 3
+            top_scored = scored_docs[:max_documents]
+            citations: List[Dict] = []
+            for d in top_scored:
+                meta = metadata_map.get(d["document"], {})
+                preview = d["document"]
+                if len(preview) > 300:
+                    preview = preview[:300] + "…"
+                citations.append({
+                    "filename": meta.get("filename", "未知文档"),
+                    "chunk_preview": preview,
+                    "score": round(float(d["similarity"]), 4),
+                    "kb_id": meta.get("kb_id"),
+                })
+
+            return {
+                "documents": [d["document"] for d in top_scored],
+                "summary": "",
+                "citations": citations,
+                "error": None,
+            }
+
+        except Exception as e:
+            logger.error(f"【RAG】检索上下文构建失败: {e}", exc_info=True)
+            return {
+                "documents": [],
+                "summary": "抱歉，处理您的请求时出现了错误。",
+                "citations": [],
+                "error": "retrieval_failed",
+                "error_detail": str(e),
+            }
+
     # ── 综合：检索 + 重排序 + 摘要 ───────────────────────────────────────────
 
     @traceable

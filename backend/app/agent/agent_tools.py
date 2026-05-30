@@ -1,4 +1,5 @@
 import datetime
+import os
 from contextvars import ContextVar
 from typing import List, Optional
 
@@ -32,10 +33,35 @@ async def _build_rag_filter(identity: Optional[RequestIdentity]) -> Optional[dic
 
 # ── Tool implementations ─────────────────────────────────────────────────────
 
+def _rag_generation_mode() -> str:
+    mode = os.getenv("RAG_GENERATION_MODE", "agent").strip().lower()
+    return mode if mode in {"agent", "rag"} else "agent"
+
+
+def _format_agent_context(result: dict) -> str:
+    documents = result.get("documents", [])
+    summary = result.get("summary", "")
+    if not documents:
+        return summary or "抱歉，我没有找到相关的信息。"
+
+    formatted = (
+        "检索到的文档片段如下。请只基于这些片段回答用户问题；"
+        "如果片段不足以回答，请明确说明知识库信息不足。\n"
+    )
+    for i, doc in enumerate(documents, 1):
+        formatted += f"\n【文档片段{i}】\n{doc}\n"
+    formatted += "\n来源引用已由后端结构化返回给前端，不要在回答末尾手写参考文档列表。"
+    return formatted
+
+
 async def rag_summary_tools(query: str, identity: Optional[RequestIdentity] = None) -> str:
     logger.info(f"[rag_summary_tools] user_id={(identity.user_id if identity else '') or '<空>'}")
     filter_meta = await _build_rag_filter(identity)
-    result = await rag_service.get_documents_and_summary(query, filter_meta=filter_meta)
+    mode = _rag_generation_mode()
+    if mode == "rag":
+        result = await rag_service.get_documents_and_summary(query, filter_meta=filter_meta)
+    else:
+        result = await rag_service.get_documents_for_agent(query, filter_meta=filter_meta)
     summary = result.get("summary", "")
     citations = result.get("citations", [])
     error = result.get("error")
@@ -54,6 +80,9 @@ async def rag_summary_tools(query: str, identity: Optional[RequestIdentity] = No
     if error == "summarize_failed":
         logger.warning("[rag_summary_tools] 摘要阶段失败，文档已检索到但未能生成摘要")
 
+    if mode == "agent":
+        return _format_agent_context(result)
+
     formatted = f"摘要: {summary}\n"
     if citations:
         formatted += "\n来源引用:\n"
@@ -63,18 +92,6 @@ async def rag_summary_tools(query: str, identity: Optional[RequestIdentity] = No
                 f"（相关度: {c.get('score', 0):.4f}）\n"
                 f"   {c.get('chunk_preview', '')[:150]}\n"
             )
-        # 去重保序，提醒 LLM 在最终回答末尾追加来源标注
-        seen, filenames = set(), []
-        for c in citations:
-            fn = c.get("filename")
-            if fn and fn not in seen:
-                seen.add(fn)
-                filenames.append(fn)
-        citation_line = "参考文档：" + "".join(f"《{fn}》" for fn in filenames)
-        formatted += (
-            f"\n[指令] 你的最终回答必须以单独一行结尾，原样输出："
-            f"{citation_line}"
-        )
     return formatted
 
 
@@ -124,8 +141,9 @@ TOOL_SCHEMAS: list = [
         "function": {
             "name": "rag_summary_tools",
             "description": (
-                "用于从向量数据库里检索文档并生成摘要，返回包含文档列表和摘要的结果。"
-                "返回格式为：'摘要: [摘要内容]\\n\\n检索到的文档列表:\\n1. [文档1]\\n...'。"
+                "用于从向量数据库里检索文档。默认返回已重排序的文档片段，"
+                "由你基于片段生成最终回答；当系统配置为 RAG 生成模式时会返回摘要。"
+                "来源引用由后端结构化返回给前端，不要手写参考文档列表。"
                 "注意：文档已经过自动重排序，无需再调用重排序工具。"
             ),
             "parameters": {
