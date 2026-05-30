@@ -59,6 +59,7 @@ class RagService:
 
     @traceable
     async def generate_hypothetical_document(self, query: str) -> str:
+        t0 = time.perf_counter()
         try:
             hyde_chain = self.hyde_prompt_template | self.chat_model | StrOutputParser()
             hypothetical_doc = await hyde_chain.ainvoke({"query": query})
@@ -67,6 +68,11 @@ class RagService:
         except Exception as e:
             logger.error(f"【HyDE】生成假设性文档失败: {e}")
             return query
+        finally:
+            logger.info(
+                f"[Timing][RAG] stage=hyde_generate "
+                f"duration={time.perf_counter() - t0:.3f}s"
+            )
 
     # ── 检索 ──────────────────────────────────────────────────────────────────
 
@@ -85,21 +91,32 @@ class RagService:
                 "检索成功但 0 命中"不视为错误，返回 []。
         """
         try:
+            init_t0 = time.perf_counter()
             if filter_meta:
                 retriever = await self.vector_store.get_retriever(query, filter_meta=filter_meta)
             else:
                 if self.retriever is None:
                     await self.initialize_retriever(query)
                 retriever = self.retriever
+            logger.info(
+                f"[Timing][RAG] stage=retriever_init filtered={bool(filter_meta)} "
+                f"duration={time.perf_counter() - init_t0:.3f}s"
+            )
         except Exception as e:
             logger.error(f"【HyDE】检索器初始化失败: {e}", exc_info=True)
             raise RetrievalError(f"检索器初始化失败: {e}") from e
 
+        total_t0 = time.perf_counter()
         logger.info(f"【HyDE】开始处理查询: {query}")
         hypothetical_doc = await self.generate_hypothetical_document(query)
 
         try:
+            retrieve_t0 = time.perf_counter()
             child_docs = await retriever.ainvoke(hypothetical_doc)
+            logger.info(
+                f"[Timing][RAG] stage=child_retrieve child_count={len(child_docs)} "
+                f"duration={time.perf_counter() - retrieve_t0:.3f}s"
+            )
         except Exception as e:
             logger.error(f"【HyDE】向量/BM25 检索失败: {e}", exc_info=True)
             raise RetrievalError(f"向量/BM25 检索失败: {e}") from e
@@ -113,13 +130,26 @@ class RagService:
         })
 
         if not parent_ids:
+            logger.info(
+                f"[Timing][RAG] stage=retrieve_document_total child_count={len(child_docs)} "
+                f"parent_count=0 duration={time.perf_counter() - total_t0:.3f}s"
+            )
             return child_docs
 
         try:
+            parent_t0 = time.perf_counter()
             parent_map = await parent_chunk_service.get_by_ids(parent_ids)
+            logger.info(
+                f"[Timing][RAG] stage=parent_fetch requested={len(parent_ids)} "
+                f"found={len(parent_map)} duration={time.perf_counter() - parent_t0:.3f}s"
+            )
         except Exception as e:
             # 父块查询失败不致命，降级为只用子块
             logger.warning(f"【父子扩展】父块查询失败，降级返回子块: {e}")
+            logger.info(
+                f"[Timing][RAG] stage=retrieve_document_total child_count={len(child_docs)} "
+                f"parent_count=0 duration={time.perf_counter() - total_t0:.3f}s"
+            )
             return child_docs
 
         seen_parents: set = set()
@@ -135,6 +165,10 @@ class RagService:
         logger.info(
             f"【父子扩展】{len(child_docs)} 子块 → {len(expanded)} 父块"
             f"（命中 {len(parent_map)}/{len(parent_ids)}）"
+        )
+        logger.info(
+            f"[Timing][RAG] stage=retrieve_document_total child_count={len(child_docs)} "
+            f"parent_count={len(expanded)} duration={time.perf_counter() - total_t0:.3f}s"
         )
         return expanded
 
@@ -155,9 +189,19 @@ class RagService:
         self, query: str, filter_meta: Optional[dict] = None
     ) -> Dict[str, Any]:
         """只执行检索、重排序和引用构建，让 Agent 负责最终生成。"""
+        total_t0 = time.perf_counter()
         try:
+            retrieve_t0 = time.perf_counter()
             documents = await self.retrieve_document(query, filter_meta=filter_meta)
+            logger.info(
+                f"[Timing][RAG] stage=agent_context_retrieve doc_count={len(documents)} "
+                f"duration={time.perf_counter() - retrieve_t0:.3f}s"
+            )
         except RetrievalError as e:
+            logger.info(
+                f"[Timing][RAG] stage=agent_context_total status=retrieval_failed "
+                f"duration={time.perf_counter() - total_t0:.3f}s"
+            )
             return {
                 "documents": [],
                 "summary": "知识库检索服务暂时不可用，请稍后再试或联系管理员。",
@@ -170,7 +214,12 @@ class RagService:
             metadata_map: Dict[str, dict] = {doc.page_content: doc.metadata for doc in documents}
             document_contents = [doc.page_content for doc in documents]
 
+            rerank_t0 = time.perf_counter()
             reorder_result = await reorder_service.reorder_documents(query, document_contents)
+            logger.info(
+                f"[Timing][RAG] stage=agent_context_rerank doc_count={len(document_contents)} "
+                f"duration={time.perf_counter() - rerank_t0:.3f}s"
+            )
             if reorder_result["success"]:
                 scored_docs: List[Dict] = reorder_result["documents"]
             else:
@@ -178,6 +227,10 @@ class RagService:
                 scored_docs = [{"document": c, "similarity": 0.0} for c in document_contents]
 
             if not scored_docs:
+                logger.info(
+                    f"[Timing][RAG] stage=agent_context_total status=no_results "
+                    f"duration={time.perf_counter() - total_t0:.3f}s"
+                )
                 return {
                     "documents": [],
                     "summary": "抱歉，我没有找到相关的信息。",
@@ -188,6 +241,10 @@ class RagService:
             max_score = max(d["similarity"] for d in scored_docs)
             if max_score < _CONFIDENCE_THRESHOLD:
                 logger.info(f"【RAG】最高置信度 {max_score:.4f} 低于阈值 {_CONFIDENCE_THRESHOLD}，拒绝回答")
+                logger.info(
+                    f"[Timing][RAG] stage=agent_context_total status=low_confidence "
+                    f"max_score={max_score:.4f} duration={time.perf_counter() - total_t0:.3f}s"
+                )
                 return {
                     "documents": [],
                     "summary": "抱歉，未在知识库中找到与您问题相关的信息，请尝试换个提问方式或上传相关文档。",
@@ -198,6 +255,7 @@ class RagService:
             max_documents = 3
             top_scored = scored_docs[:max_documents]
             citations: List[Dict] = []
+            citation_t0 = time.perf_counter()
             for d in top_scored:
                 meta = metadata_map.get(d["document"], {})
                 preview = d["document"]
@@ -209,7 +267,15 @@ class RagService:
                     "score": round(float(d["similarity"]), 4),
                     "kb_id": meta.get("kb_id"),
                 })
+            logger.info(
+                f"[Timing][RAG] stage=agent_context_citations citation_count={len(citations)} "
+                f"duration={time.perf_counter() - citation_t0:.3f}s"
+            )
 
+            logger.info(
+                f"[Timing][RAG] stage=agent_context_total status=ok "
+                f"doc_count={len(top_scored)} duration={time.perf_counter() - total_t0:.3f}s"
+            )
             return {
                 "documents": [d["document"] for d in top_scored],
                 "summary": "",
@@ -219,6 +285,10 @@ class RagService:
 
         except Exception as e:
             logger.error(f"【RAG】检索上下文构建失败: {e}", exc_info=True)
+            logger.info(
+                f"[Timing][RAG] stage=agent_context_total status=failed "
+                f"duration={time.perf_counter() - total_t0:.3f}s"
+            )
             return {
                 "documents": [],
                 "summary": "抱歉，处理您的请求时出现了错误。",
@@ -243,9 +313,19 @@ class RagService:
 
         citations 格式：[{"filename": str, "chunk_preview": str, "score": float, "kb_id": str|None}]
         """
+        total_t0 = time.perf_counter()
         try:
+            retrieve_t0 = time.perf_counter()
             documents = await self.retrieve_document(query, filter_meta=filter_meta)
+            logger.info(
+                f"[Timing][RAG] stage=summary_retrieve doc_count={len(documents)} "
+                f"duration={time.perf_counter() - retrieve_t0:.3f}s"
+            )
         except RetrievalError as e:
+            logger.info(
+                f"[Timing][RAG] stage=summary_total status=retrieval_failed "
+                f"duration={time.perf_counter() - total_t0:.3f}s"
+            )
             return {
                 "documents": [],
                 "summary": "知识库检索服务暂时不可用，请稍后再试或联系管理员。",
@@ -260,7 +340,12 @@ class RagService:
             document_contents = [doc.page_content for doc in documents]
 
             # 重排序（保留原始分数）
+            rerank_t0 = time.perf_counter()
             reorder_result = await reorder_service.reorder_documents(query, document_contents)
+            logger.info(
+                f"[Timing][RAG] stage=summary_rerank doc_count={len(document_contents)} "
+                f"duration={time.perf_counter() - rerank_t0:.3f}s"
+            )
             if reorder_result["success"]:
                 scored_docs: List[Dict] = reorder_result["documents"]  # [{document, similarity}]
             else:
@@ -268,6 +353,10 @@ class RagService:
                 scored_docs = [{"document": c, "similarity": 0.0} for c in document_contents]
 
             if not scored_docs:
+                logger.info(
+                    f"[Timing][RAG] stage=summary_total status=no_results "
+                    f"duration={time.perf_counter() - total_t0:.3f}s"
+                )
                 return {
                     "documents": [], "summary": "抱歉，我没有找到相关的信息。",
                     "citations": [], "error": None,
@@ -277,6 +366,10 @@ class RagService:
             max_score = max(d["similarity"] for d in scored_docs)
             if max_score < _CONFIDENCE_THRESHOLD:
                 logger.info(f"【RAG】最高置信度 {max_score:.4f} 低于阈值 {_CONFIDENCE_THRESHOLD}，拒绝回答")
+                logger.info(
+                    f"[Timing][RAG] stage=summary_total status=low_confidence "
+                    f"max_score={max_score:.4f} duration={time.perf_counter() - total_t0:.3f}s"
+                )
                 return {
                     "documents": [],
                     "summary": "抱歉，未在知识库中找到与您问题相关的信息，请尝试换个提问方式或上传相关文档。",
@@ -288,6 +381,7 @@ class RagService:
             max_documents = 3
             top_scored = scored_docs[:max_documents]
             citations: List[Dict] = []
+            citation_t0 = time.perf_counter()
             for d in top_scored:
                 meta = metadata_map.get(d["document"], {})
                 preview = d["document"]
@@ -299,6 +393,10 @@ class RagService:
                     "score": round(float(d["similarity"]), 4),
                     "kb_id": meta.get("kb_id"),
                 })
+            logger.info(
+                f"[Timing][RAG] stage=summary_citations citation_count={len(citations)} "
+                f"duration={time.perf_counter() - citation_t0:.3f}s"
+            )
 
             reordered_contents = [d["document"] for d in scored_docs]
 
@@ -324,6 +422,10 @@ class RagService:
                 logger.info(f"【RAG】所有文档总结完成，总耗时: {time.time()-t0:.2f}秒")
 
                 if len(individual_summaries) == 1:
+                    logger.info(
+                        f"[Timing][RAG] stage=summary_total status=ok "
+                        f"doc_count={len(reordered_contents)} duration={time.perf_counter() - total_t0:.3f}s"
+                    )
                     return {
                         "documents": reordered_contents,
                         "summary": individual_summaries[0],
@@ -335,9 +437,18 @@ class RagService:
                 for i, s in enumerate(individual_summaries, 1):
                     combined_context += f"【文档{i}摘要】:{s}\n\n"
 
+                final_t0 = time.perf_counter()
                 final_summary = await asyncio.wait_for(
                     self.chain.ainvoke({"input": query, "context": combined_context}),
                     timeout=30.0,
+                )
+                logger.info(
+                    f"[Timing][RAG] stage=final_summary_generate "
+                    f"duration={time.perf_counter() - final_t0:.3f}s"
+                )
+                logger.info(
+                    f"[Timing][RAG] stage=summary_total status=ok "
+                    f"doc_count={len(reordered_contents)} duration={time.perf_counter() - total_t0:.3f}s"
                 )
                 return {
                     "documents": reordered_contents,
@@ -348,6 +459,10 @@ class RagService:
 
             except asyncio.TimeoutError:
                 logger.error("【RAG】生成摘要超时")
+                logger.info(
+                    f"[Timing][RAG] stage=summary_total status=timeout "
+                    f"duration={time.perf_counter() - total_t0:.3f}s"
+                )
                 return {
                     "documents": reordered_contents,
                     "summary": "抱歉，生成摘要超时，请稍后再试。",
@@ -357,6 +472,10 @@ class RagService:
 
         except Exception as e:
             logger.error(f"【RAG】摘要阶段失败: {e}", exc_info=True)
+            logger.info(
+                f"[Timing][RAG] stage=summary_total status=failed "
+                f"duration={time.perf_counter() - total_t0:.3f}s"
+            )
             return {
                 "documents": [], "summary": "抱歉，处理您的请求时出现了错误。",
                 "citations": [], "error": "summarize_failed",

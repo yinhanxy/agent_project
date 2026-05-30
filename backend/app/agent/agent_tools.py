@@ -1,5 +1,6 @@
 import datetime
 import os
+import time
 from contextvars import ContextVar
 from typing import List, Optional
 
@@ -55,44 +56,64 @@ def _format_agent_context(result: dict) -> str:
 
 
 async def rag_summary_tools(query: str, identity: Optional[RequestIdentity] = None) -> str:
+    total_t0 = time.perf_counter()
+    mode = "unknown"
     logger.info(f"[rag_summary_tools] user_id={(identity.user_id if identity else '') or '<空>'}")
-    filter_meta = await _build_rag_filter(identity)
-    mode = _rag_generation_mode()
-    if mode == "rag":
-        result = await rag_service.get_documents_and_summary(query, filter_meta=filter_meta)
-    else:
-        result = await rag_service.get_documents_for_agent(query, filter_meta=filter_meta)
-    summary = result.get("summary", "")
-    citations = result.get("citations", [])
-    error = result.get("error")
-
-    _citations_var.set(citations)
-
-    # 检索系统故障：给 LLM 明确信号，避免被误解为"知识库无此内容"
-    if error == "retrieval_failed":
-        detail = result.get("error_detail", "")
-        logger.error(f"[rag_summary_tools] 检索系统故障: {detail}")
-        return (
-            "【检索工具异常】知识库检索服务暂时不可用，本次未能从知识库获取任何文档。"
-            "请如实告知用户检索服务暂时不可用，建议稍后重试，不要凭借模型自身知识作答。"
+    try:
+        filter_t0 = time.perf_counter()
+        filter_meta = await _build_rag_filter(identity)
+        logger.info(
+            f"[Timing][RAGTool] stage=build_filter "
+            f"duration={time.perf_counter() - filter_t0:.3f}s"
         )
 
-    if error == "summarize_failed":
-        logger.warning("[rag_summary_tools] 摘要阶段失败，文档已检索到但未能生成摘要")
+        mode = _rag_generation_mode()
+        rag_t0 = time.perf_counter()
+        if mode == "rag":
+            result = await rag_service.get_documents_and_summary(query, filter_meta=filter_meta)
+        else:
+            result = await rag_service.get_documents_for_agent(query, filter_meta=filter_meta)
+        logger.info(
+            f"[Timing][RAGTool] stage=rag_service mode={mode} "
+            f"duration={time.perf_counter() - rag_t0:.3f}s"
+        )
 
-    if mode == "agent":
-        return _format_agent_context(result)
+        summary = result.get("summary", "")
+        citations = result.get("citations", [])
+        error = result.get("error")
 
-    formatted = f"摘要: {summary}\n"
-    if citations:
-        formatted += "\n来源引用:\n"
-        for i, c in enumerate(citations, 1):
-            formatted += (
-                f"{i}. 【{c.get('filename', '未知')}】"
-                f"（相关度: {c.get('score', 0):.4f}）\n"
-                f"   {c.get('chunk_preview', '')[:150]}\n"
+        _citations_var.set(citations)
+
+        # 检索系统故障：给 LLM 明确信号，避免被误解为"知识库无此内容"
+        if error == "retrieval_failed":
+            detail = result.get("error_detail", "")
+            logger.error(f"[rag_summary_tools] 检索系统故障: {detail}")
+            return (
+                "【检索工具异常】知识库检索服务暂时不可用，本次未能从知识库获取任何文档。"
+                "请如实告知用户检索服务暂时不可用，建议稍后重试，不要凭借模型自身知识作答。"
             )
-    return formatted
+
+        if error == "summarize_failed":
+            logger.warning("[rag_summary_tools] 摘要阶段失败，文档已检索到但未能生成摘要")
+
+        if mode == "agent":
+            return _format_agent_context(result)
+
+        formatted = f"摘要: {summary}\n"
+        if citations:
+            formatted += "\n来源引用:\n"
+            for i, c in enumerate(citations, 1):
+                formatted += (
+                    f"{i}. 【{c.get('filename', '未知')}】"
+                    f"（相关度: {c.get('score', 0):.4f}）\n"
+                    f"   {c.get('chunk_preview', '')[:150]}\n"
+                )
+        return formatted
+    finally:
+        logger.info(
+            f"[Timing][RAGTool] stage=total mode={mode} "
+            f"duration={time.perf_counter() - total_t0:.3f}s"
+        )
 
 
 async def reorder_documents_tools(query: str, documents: List[str]) -> str:

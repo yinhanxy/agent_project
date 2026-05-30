@@ -83,6 +83,27 @@ async def test_agent_generation_mode_returns_context_and_structured_citations(mo
 
 
 @pytest.mark.asyncio
+async def test_rag_tool_timing_is_logged_but_not_returned(monkeypatch, caplog):
+    fake = _FakeRagService()
+    monkeypatch.setenv("RAG_GENERATION_MODE", "agent")
+    monkeypatch.setattr(agent_tools, "rag_service", fake)
+    monkeypatch.setattr(agent_tools, "_build_rag_filter", _filter_for_user)
+
+    with caplog.at_level("INFO", logger="agent"):
+        result = await agent_tools.rag_summary_tools(
+            "语言区别",
+            identity=RequestIdentity(user_id="u1"),
+        )
+
+    assert "[Timing]" not in result
+    assert "耗时" not in result
+    assert any(
+        "[Timing][RAGTool]" in record.message and "mode=agent" in record.message
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
 async def test_rag_generation_mode_keeps_legacy_summary(monkeypatch):
     fake = _FakeRagService()
     monkeypatch.setenv("RAG_GENERATION_MODE", "rag")

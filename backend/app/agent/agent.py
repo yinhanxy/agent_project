@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from typing import List, Optional, AsyncGenerator
 
 import httpx
@@ -135,6 +136,7 @@ class AgentLoop:
         tool_fn = self.tools.get(name)
         if tool_fn is None:
             return f"工具 {name} 不存在"
+        t0 = time.perf_counter()
         try:
             args = json.loads(arguments) if arguments.strip() else {}
             # rag_summary_tools 需要请求级身份做权限过滤，由调用方显式注入 identity
@@ -145,6 +147,11 @@ class AgentLoop:
         except Exception as e:
             logger.error(f"[Tool] {name} 执行异常: {e}", exc_info=True)
             return f"工具执行失败: {e}"
+        finally:
+            logger.info(
+                f"[Timing][Agent] stage=tool_execute tool={name} "
+                f"duration={time.perf_counter() - t0:.3f}s"
+            )
 
     # ── 流式执行 ──────────────────────────────────────────────────────────────
 
@@ -169,6 +176,7 @@ class AgentLoop:
         collected_citations: list = []  # 工具执行时同步固化的结构化引用
 
         max_rounds = _max_tool_rounds()
+        stream_total_t0 = time.perf_counter()
         for round_idx in range(max_rounds + 1):
             on_model_call(messages)
             # 最后一轮禁用工具，强制模型输出文字答复，保证循环必然终止
@@ -176,6 +184,7 @@ class AgentLoop:
             prompt_est = _estimate_messages_tokens(messages)
             # 思考期先发一个初始估算（已消耗的输入 token），让前端立刻有数字开始增长
             yield {"type": "usage", "tokens": committed_tokens + prompt_est, "estimated": True}
+            model_t0 = time.perf_counter()
             stream = await self.client.chat.completions.create(
                 model=self._model_name(),
                 messages=messages,
@@ -190,8 +199,11 @@ class AgentLoop:
             tool_calls_buf: dict[int, dict] = {}  # chunk index -> {id, name, args}
             turn_usage_total: Optional[int] = None
             last_emit_len = 0
+            first_chunk_at: Optional[float] = None
 
             async for chunk in stream:
+                if first_chunk_at is None:
+                    first_chunk_at = time.perf_counter()
                 # include_usage 的最后一帧 choices 为空、仅带 usage
                 if getattr(chunk, "usage", None) is not None:
                     turn_usage_total = chunk.usage.total_tokens
@@ -230,6 +242,18 @@ class AgentLoop:
                 committed_tokens += prompt_est + _estimate_text_tokens(content_buf)
 
             on_model_response(bool(tool_calls_buf), len(content_buf))
+            model_duration = time.perf_counter() - model_t0
+            first_chunk_duration = (
+                first_chunk_at - model_t0 if first_chunk_at is not None else None
+            )
+            first_chunk_text = (
+                f"{first_chunk_duration:.3f}s" if first_chunk_duration is not None else "none"
+            )
+            logger.info(
+                f"[Timing][Agent] stage=model_turn round={round_idx + 1} "
+                f"tool_calls={len(tool_calls_buf)} content_chars={len(content_buf)} "
+                f"first_chunk={first_chunk_text} duration={model_duration:.3f}s"
+            )
 
             if not tool_calls_buf:
                 break  # 无工具调用，流式输出已完成
@@ -277,6 +301,10 @@ class AgentLoop:
                 })
 
         on_agent_end("", steps)
+        logger.info(
+            f"[Timing][Agent] stage=stream_total rounds={round_idx + 1} "
+            f"steps={len(steps)} duration={time.perf_counter() - stream_total_t0:.3f}s"
+        )
         yield {"type": "done", "steps": steps, "tokens": committed_tokens, "citations": collected_citations}
 
 
@@ -294,8 +322,14 @@ async def get_agent_stream_response(
     **kwargs,
 ) -> AsyncGenerator[str, None]:
     """SSE 流式调用，yield Server-Sent Events 格式字符串"""
+    total_t0 = time.perf_counter()
     user_id = identity.user_id
+    history_t0 = time.perf_counter()
     history = await sm.session_manager.get_history(session_id, user_id)
+    logger.info(
+        f"[Timing][AgentSSE] stage=history_load session={session_id} "
+        f"duration={time.perf_counter() - history_t0:.3f}s"
+    )
     logger.info(f"[Agent流式] 开始 user={user_id} session={session_id}")
 
     # 初始帧：告知客户端 session_id
@@ -320,7 +354,16 @@ async def get_agent_stream_response(
             citations = event.get("citations", [])
 
     response = "".join(full_response) or "抱歉，我无法理解您的请求。"
+    save_t0 = time.perf_counter()
     await sm.session_manager.add_message(session_id, user_id, query, response)
+    logger.info(
+        f"[Timing][AgentSSE] stage=history_save session={session_id} "
+        f"duration={time.perf_counter() - save_t0:.3f}s"
+    )
 
     yield f"data: {json.dumps({'type': 'done', 'session_id': session_id, 'citations': citations, 'tokens': total_tokens}, ensure_ascii=False)}\n\n"
+    logger.info(
+        f"[Timing][AgentSSE] stage=request_total session={session_id} "
+        f"response_chars={len(response)} duration={time.perf_counter() - total_t0:.3f}s"
+    )
     logger.info(f"[Agent流式] 完成 session={session_id} steps={len(steps)} citations={len(citations)} tokens={total_tokens}")
