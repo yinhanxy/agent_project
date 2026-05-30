@@ -1,5 +1,6 @@
 import os
 import json
+from dataclasses import dataclass
 from typing import Optional, Dict, Any
 import requests
 from dotenv import load_dotenv
@@ -159,6 +160,41 @@ async def get_current_user_is_admin(
     except Exception as e:
         logger.error(f"[is_admin] exception: {e}", extra={"path": "auth_utils.get_current_user_is_admin"})
     return False
+
+
+@dataclass(frozen=True)
+class RequestIdentity:
+    """请求级身份：知识库权限判定的统一输入。"""
+    user_id: str
+    is_admin: bool = False
+    dept_id: Optional[str] = None
+    is_dept_admin: bool = False
+
+
+def build_identity(user_id: str, user_info: Optional[Dict[str, Any]]) -> "RequestIdentity":
+    """从 user_info 提取身份；缺字段降级为「无部门 + 普通成员」。"""
+    info = user_info if isinstance(user_info, dict) else {}
+    dept_id = info.get("dept_id") or None  # "" / None 统一成 None
+    return RequestIdentity(
+        user_id=user_id,
+        is_admin=bool(info.get("is_admin", False)),
+        dept_id=dept_id,
+        is_dept_admin=bool(info.get("is_dept_admin", False)),
+    )
+
+
+async def get_current_identity(
+    user_id: str = Depends(get_current_user_id),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> "RequestIdentity":
+    """FastAPI 依赖：解析当前请求的部门身份。"""
+    try:
+        user_info = await get_user_info_from_redis(user_id, credentials)
+    except Exception as e:
+        logger.error(f"[identity] 取用户信息失败，降级为普通成员: {e}",
+                     extra={"path": "auth_utils.get_current_identity"})
+        user_info = None
+    return build_identity(user_id, user_info)
 
 
 async def get_user_info_from_redis(user_id: str, credentials: HTTPAuthorizationCredentials):
