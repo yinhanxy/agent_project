@@ -37,6 +37,11 @@ Thumbs.db
 
 # Logs
 logs
+log/**
+!log/
+!log/README.md
+!log/**/
+!log/**/.gitkeep
 *.log
 data/
 media/
