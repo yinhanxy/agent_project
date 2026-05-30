@@ -7,8 +7,8 @@ ignored.
 Suggested module layout:
 
 - `frontend/`: frontend dev server and build logs.
-- `backend/`: FastAPI service logs.
-- `django/`: Django user service logs.
+- `backend/`: FastAPI app logs and uvicorn stdout/stderr logs.
+- `django/`: Django user service stdout/stderr and Celery logs.
 - `ollama/`: Ollama pull or model runtime logs.
 
 When adding a new module, create a matching subdirectory under `log/` and keep

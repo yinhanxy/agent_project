@@ -1,13 +1,13 @@
 import logging
 import os
 from datetime import datetime
-import sys
 
-# 获取项目根目录
+# 获取服务目录和项目根目录
 project_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+repo_path = os.path.abspath(os.path.join(project_path, '..'))
 
-# 如果没有logs文件夹，则创建
-logs_dir = os.path.join(project_path, 'logs')
+# 统一写入仓库根目录 log/backend
+logs_dir = os.path.join(repo_path, 'log', 'backend')
 os.makedirs(logs_dir, exist_ok=True)
 
 # 日志模式
@@ -40,10 +40,8 @@ def get_logger(
     if log_file is None:
         log_file = f"{name}_{datetime.now().strftime('%Y%m%d')}.log"
     
-    # 确保logs目录存在
-    logs_dir = os.path.join(project_path, 'logs')
     os.makedirs(logs_dir, exist_ok=True)
-    
+
     file_handler = logging.FileHandler(os.path.join(logs_dir, log_file), encoding='utf-8')
     file_handler.setLevel(file_level)
     file_handler.setFormatter(DEFAULT_LOGGING_FORMAT)
@@ -64,4 +62,4 @@ if __name__ == '__main__':
     logger.debug('这是一条debug日志')
     logger.error('这是一条error日志')
     logger.warning('这是一条warning日志')
-    print("日志测试完成，请检查logs目录是否创建")
+    print("日志测试完成，请检查log/backend目录是否创建")

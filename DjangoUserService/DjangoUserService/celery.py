@@ -19,7 +19,9 @@ app.conf.timezone = 'Asia/Shanghai'
 def setup_loggers(logger, *args, **kwargs):
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-    fh = logging.FileHandler('logs.log')
+    log_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'log', 'django'))
+    os.makedirs(log_dir, exist_ok=True)
+    fh = logging.FileHandler(os.path.join(log_dir, 'celery.log'), encoding='utf-8')
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(formatter)
     logger.addHandler(fh)
