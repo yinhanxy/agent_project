@@ -24,6 +24,55 @@ from app.core.logger_handler import logger
 _ROLE_RANK = {"viewer": 0, "editor": 1, "admin": 2}
 
 
+# ── 权限判定纯函数（无副作用，便于单元测试）──────────────────────────────────
+
+def can_create_kb(
+    scope: str,
+    is_admin: bool,
+    is_dept_admin: bool,
+    user_dept_id: Optional[str],
+    req_dept_id: Optional[str],
+) -> tuple[bool, Optional[str]]:
+    """判定能否创建某范围知识库，返回 (是否允许, 生效的 dept_id)。
+
+    - personal：所有人
+    - company / admin：仅总管理员
+    - dept：总管理员可建任意部门库；部门管理员仅可建本部门库（未传 dept_id 则回填自身部门）
+    """
+    if scope == "personal":
+        return True, None
+    if scope in ("company", "admin"):
+        return (True, None) if is_admin else (False, None)
+    if scope == "dept":
+        if is_admin:
+            return True, (req_dept_id or None)
+        if is_dept_admin and user_dept_id and req_dept_id in (None, "", user_dept_id):
+            return True, user_dept_id
+        return False, None
+    return False, None
+
+
+def assemble_rag_filter(
+    user_id: str, is_admin: bool, accessible_kb_ids: List[str]
+) -> Optional[dict]:
+    """组装向量库/BM25 过滤条件。
+
+    管理员 → None（全库可见）；无 user_id → None（调用方负责告警降级）。
+    """
+    if is_admin:
+        return None
+    if not user_id:
+        return None
+    if accessible_kb_ids:
+        return {
+            "$or": [
+                {"user_id": {"$eq": user_id}},
+                {"kb_id": {"$in": accessible_kb_ids}},
+            ]
+        }
+    return {"user_id": {"$eq": user_id}}
+
+
 class KBService:
 
     # ── 创建 / 查询 ────────────────────────────────────────────────────────────
@@ -110,6 +159,15 @@ class KBService:
     ) -> List[str]:
         kbs = await self.list_accessible_kbs(user_id, is_admin=is_admin, dept_id=dept_id)
         return [kb["kb_id"] for kb in kbs]
+
+    async def build_accessible_filter(
+        self, user_id: str, is_admin: bool = False, dept_id: Optional[str] = None
+    ) -> Optional[dict]:
+        """按当前身份组装检索过滤条件（agent 路径与 /rag/query 复用）。"""
+        if is_admin or not user_id:
+            return assemble_rag_filter(user_id, is_admin, [])
+        ids = await self.get_accessible_kb_ids(user_id, is_admin=is_admin, dept_id=dept_id)
+        return assemble_rag_filter(user_id, is_admin, ids)
 
     # ── 权限检查 ──────────────────────────────────────────────────────────────
 
