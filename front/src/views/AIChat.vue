@@ -180,26 +180,6 @@
               </div>
 
               <div
-                v-if="message.role === 'assistant' && message.citations && message.citations.length"
-                class="citations-section"
-              >
-                <button class="citations-toggle" type="button" @click="message.showCitations = !message.showCitations">
-                  <span>
-                    <van-icon name="description-o" size="12" />
-                    参考来源 {{ message.citations.length }}
-                  </span>
-                  <van-icon :name="message.showCitations ? 'arrow-up' : 'arrow-down'" size="12" />
-                </button>
-                <div v-if="message.showCitations" class="citations-list">
-                  <div v-for="(c, ci) in message.citations" :key="ci" class="citation-item">
-                    <van-icon name="label-o" size="12" color="#6b7c8f" />
-                    <span class="citation-filename">{{ c.filename }}</span>
-                    <span class="citation-score">{{ (c.score * 100).toFixed(0) }}%</span>
-                  </div>
-                </div>
-              </div>
-
-              <div
                 v-if="message.role === 'assistant' && (message.streaming || message.tokens != null)"
                 class="token-usage"
               >
@@ -246,32 +226,47 @@
       </footer>
     </section>
 
-    <aside class="context-sidebar" aria-label="上下文面板">
+    <aside class="agent-activity-panel" aria-label="Agent 执行步骤">
       <section class="context-card">
         <div class="context-card-title">
-          <h3>当前会话</h3>
-          <span>{{ messages.length }} 条</span>
+          <h3>Agent 执行步骤</h3>
+          <span>{{ latestAgentSteps.length || 0 }}</span>
         </div>
-        <p class="current-session-title">{{ currentSessionTitle }}</p>
-      </section>
-
-      <section class="context-card">
-        <div class="context-card-title">
-          <h3>当前知识库</h3>
-          <button type="button" @click="goToKnowledge">管理</button>
-        </div>
-        <div v-if="knowledgeBases.length" class="context-list">
-          <div v-for="kb in knowledgeBases" :key="kb.kb_id" class="context-row">
-            <span>{{ kb.name }}</span>
-            <strong>{{ scopeLabel(kb.scope) }}</strong>
+        <div v-if="latestAgentSteps.length" class="agent-step-list">
+          <div
+            v-for="step in latestAgentSteps"
+            :key="step.id"
+            :class="['agent-step', `agent-step-${step.level || 'info'}`, `agent-step-${step.status || 'done'}`]"
+          >
+            <span class="agent-step-icon">
+              <van-loading v-if="step.status === 'running'" size="12" />
+              <van-icon v-else :name="agentStepIcon(step)" size="13" />
+            </span>
+            <span class="agent-step-title">{{ step.title }}</span>
+            <span v-if="step.detail" class="agent-step-detail">{{ step.detail }}</span>
           </div>
         </div>
-        <p v-else class="context-muted">暂无知识库</p>
+        <p v-else class="context-muted">等待下一次任务</p>
       </section>
 
       <section class="context-card">
         <div class="context-card-title">
-          <h3>参考来源</h3>
+          <h3>运行状态</h3>
+          <span v-if="latestAssistantMessage?.streaming">执行中</span>
+          <span v-else>空闲</span>
+        </div>
+        <div class="context-list">
+          <div class="context-row"><span>会话</span><strong>{{ messages.length }} 条</strong></div>
+          <div class="context-row"><span>耗时</span><strong>{{ latestAssistantMessage?.elapsed != null ? `${latestAssistantMessage.elapsed.toFixed(1)}s` : '-' }}</strong></div>
+          <div class="context-row"><span>Tokens</span><strong>{{ latestAssistantMessage?.tokens || '-' }}</strong></div>
+        </div>
+      </section>
+    </aside>
+
+    <aside class="context-sidebar" aria-label="引用文档与工具结果">
+      <section class="context-card">
+        <div class="context-card-title">
+          <h3>引用文档</h3>
           <span>{{ latestCitations.length || 0 }}</span>
         </div>
         <div v-if="latestCitations.length" class="context-list">
@@ -281,6 +276,36 @@
           </div>
         </div>
         <p v-else class="context-muted">暂无引用</p>
+      </section>
+
+      <section class="context-card">
+        <div class="context-card-title">
+          <h3>工具调用结果</h3>
+          <span>{{ latestToolResults.length || 0 }}</span>
+        </div>
+        <div v-if="latestToolResults.length" class="tool-result-list">
+          <div v-for="step in latestToolResults" :key="step.id" class="tool-result-item">
+            <strong>{{ step.title }}</strong>
+            <span>{{ step.detail || '已完成' }}</span>
+          </div>
+        </div>
+        <p v-else class="context-muted">暂无工具结果</p>
+      </section>
+
+      <section class="context-card">
+        <div class="context-card-title">
+          <h3>审批</h3>
+        </div>
+        <div class="approval-actions">
+          <button type="button" class="approval-primary" :disabled="!latestAssistantMessage" @click="showToast('已批准当前结果')">
+            <van-icon name="passed" size="14" />
+            批准
+          </button>
+          <button type="button" class="approval-secondary" :disabled="!latestAssistantMessage" @click="showToast('已拒绝当前结果')">
+            <van-icon name="close" size="14" />
+            拒绝
+          </button>
+        </div>
       </section>
 
       <section class="context-card">
@@ -333,7 +358,7 @@ const getCsrfToken = () => {
 
 // 聊天消息
 const messages = ref([
-  { role: 'assistant', content: '你好！我是AI助手，有什么可以帮助你的吗？', citations: [], showCitations: false, usedRag: false }
+  { role: 'assistant', content: '你好！我是AI助手，有什么可以帮助你的吗？', citations: [], showCitations: false, usedRag: false, steps: [] }
 ]);
 const knowledgeBases = ref([]);
 const KB_SCOPE_LABELS = { personal: '个人', company: '公开', dept: '部门', admin: '管理员' };
@@ -371,6 +396,13 @@ const latestCitations = computed(() => {
     .find(message => message.role === 'assistant' && message.citations?.length);
   return assistantWithSources?.citations || [];
 });
+const latestAssistantMessage = computed(() => (
+  [...messages.value].reverse().find(message => message.role === 'assistant') || null
+));
+const latestAgentSteps = computed(() => latestAssistantMessage.value?.steps || []);
+const latestToolResults = computed(() => (
+  latestAgentSteps.value.filter(step => step.id?.startsWith('tool_') && step.status !== 'running')
+));
 const currentSessionTitle = computed(() => {
   const currentSession = sessionStore.currentSession
     || sessionStore.sessions.find(session => session.session_id === sessionId.value);
@@ -440,6 +472,25 @@ const formatMessage = (content) => {
   }
 };
 
+const agentStepIcon = (step) => {
+  if (step.level === 'warning') return 'warning-o';
+  if (step.level === 'error') return 'close';
+  return 'success';
+};
+
+const applyAgentStep = (message, step) => {
+  if (!message || !step?.id) return;
+  if (!Array.isArray(message.steps)) {
+    message.steps = [];
+  }
+  const existingIndex = message.steps.findIndex(item => item.id === step.id);
+  if (existingIndex >= 0) {
+    message.steps[existingIndex] = { ...message.steps[existingIndex], ...step };
+  } else {
+    message.steps.push(step);
+  }
+};
+
 // 生成耗时实时计时器（同一时刻只有最后一条回答在流式）
 let tickTimer = null;
 const stopTick = () => {
@@ -480,7 +531,7 @@ const sendMessage = async () => {
   userInput.value = '';
   
   // 添加AI消息占位
-  messages.value.push({ role: 'assistant', content: '', citations: [], showCitations: false, usedRag: false, tokens: null, streaming: true, startTime: Date.now(), elapsed: 0 });
+  messages.value.push({ role: 'assistant', content: '', citations: [], showCitations: false, usedRag: false, steps: [], tokens: null, streaming: true, startTime: Date.now(), elapsed: 0 });
   // 启动实时计时（拿响应式代理引用，保证 elapsed 变化能触发更新）
   startTick(messages.value[messages.value.length - 1]);
 
@@ -566,6 +617,18 @@ const fetchAIResponse = async (userMessage) => {
           const json = JSON.parse(data);
           
           switch (json.type) {
+            case 'agent_step': {
+              const lastMsg = messages.value[messages.value.length - 1];
+              if (lastMsg && lastMsg.role === 'assistant') {
+                applyAgentStep(lastMsg, json.data);
+                if (json.data?.id === 'tool_rag_summary_tools') {
+                  lastMsg.usedRag = true;
+                }
+                await nextTick();
+                scrollToBottom();
+              }
+              break;
+            }
             case 'step':
               if (json.data?.tool === 'rag_summary_tools') {
                 const lastMsg = messages.value[messages.value.length - 1];
@@ -866,7 +929,7 @@ watch(messages, () => {
 // 重置为空白新会话状态（点击「新对话」或路由无 sessionId 时调用）
 const resetChatState = () => {
   messages.value = [
-    { role: 'assistant', content: '你好！我是AI助手，有什么可以帮助你的吗？', citations: [], showCitations: false, usedRag: false }
+    { role: 'assistant', content: '你好！我是AI助手，有什么可以帮助你的吗？', citations: [], showCitations: false, usedRag: false, steps: [] }
   ];
   sessionId.value = '';
   sessionStore.setCurrentSession(null);
@@ -929,7 +992,7 @@ const loadSessionHistory = (session) => {
   if (session.history && session.history.length > 0) {
     session.history.forEach(([userMsg, aiMsg]) => {
       messages.value.push({ role: 'user', content: userMsg });
-      messages.value.push({ role: 'assistant', content: aiMsg, citations: [], showCitations: false, usedRag: false });
+      messages.value.push({ role: 'assistant', content: aiMsg, citations: [], showCitations: false, usedRag: false, steps: [] });
     });
   }
   sessionId.value = session.session_id;
@@ -951,7 +1014,7 @@ const loadSessionHistory = (session) => {
   --shadow: 0 18px 50px rgba(20, 42, 68, 0.1);
 
   display: grid;
-  grid-template-columns: 76px minmax(280px, 320px) minmax(0, 1fr) minmax(260px, 300px);
+  grid-template-columns: 76px minmax(460px, 1.2fr) minmax(280px, 320px) minmax(300px, 340px);
   width: 100vw;
   height: 100dvh;
   min-height: 100vh;
@@ -966,6 +1029,7 @@ const loadSessionHistory = (session) => {
 
 .desktop-rail,
 .history-sidebar,
+.agent-activity-panel,
 .context-sidebar {
   min-height: 0;
   border-color: var(--line);
@@ -1020,7 +1084,7 @@ const loadSessionHistory = (session) => {
 }
 
 .history-sidebar {
-  display: flex;
+  display: none;
   flex-direction: column;
   overflow: hidden;
   padding: 18px 14px;
@@ -1519,6 +1583,82 @@ const loadSessionHistory = (session) => {
   font-weight: 750;
 }
 
+.agent-steps,
+.agent-step-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 9px 10px;
+  border: 1px solid rgba(199, 213, 223, 0.75);
+  border-radius: 8px;
+  background: rgba(250, 252, 252, 0.92);
+}
+
+.agent-step-list {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.agent-step {
+  display: grid;
+  grid-template-columns: 16px minmax(0, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  min-height: 18px;
+  color: #526476;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.agent-step-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7c8f;
+}
+
+.agent-step-success .agent-step-icon {
+  color: #0e8f73;
+}
+
+.agent-step-warning .agent-step-icon {
+  color: var(--amber);
+}
+
+.agent-step-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 750;
+}
+
+.agent-step-detail {
+  min-width: 0;
+  overflow: hidden;
+  color: #8291a3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-step-list .agent-step {
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: flex-start;
+  padding: 9px 0;
+  border-top: 1px solid #edf2f6;
+}
+
+.agent-step-list .agent-step:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.agent-step-list .agent-step-detail {
+  grid-column: 2;
+  white-space: normal;
+}
+
 .citations-section {
   margin-top: 8px;
   overflow: hidden;
@@ -1689,6 +1829,7 @@ const loadSessionHistory = (session) => {
   box-shadow: 0 10px 18px rgba(29, 111, 232, 0.2);
 }
 
+.agent-activity-panel,
 .context-sidebar {
   display: flex;
   flex-direction: column;
@@ -1697,6 +1838,11 @@ const loadSessionHistory = (session) => {
   padding: 18px 16px;
   border-left: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.76);
+}
+
+.agent-activity-panel {
+  border-left: 1px solid var(--line);
+  background: rgba(250, 252, 254, 0.86);
 }
 
 .context-card {
@@ -1775,6 +1921,74 @@ const loadSessionHistory = (session) => {
 
 .source-row strong {
   color: var(--amber);
+}
+
+.tool-result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tool-result-item {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px;
+  border: 1px solid #edf2f6;
+  border-radius: 8px;
+  background: #f8fafb;
+  color: #526174;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.tool-result-item strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.tool-result-item span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.approval-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.approval-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 34px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.approval-primary {
+  border: 0;
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.approval-secondary {
+  border: 1px solid #d8e2ea;
+  background: #ffffff;
+  color: #526174;
+}
+
+.approval-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
 }
 
 :deep(.app-tabbar.van-tabbar) {
@@ -1905,9 +2119,15 @@ const loadSessionHistory = (session) => {
   font-weight: 800;
 }
 
-@media screen and (max-width: 1180px) {
+@media screen and (max-width: 1380px) {
   .ai-chat-page {
-    grid-template-columns: 72px minmax(260px, 300px) minmax(0, 1fr);
+    grid-template-columns: 72px minmax(420px, 1fr) minmax(260px, 300px) minmax(280px, 320px);
+  }
+}
+
+@media screen and (max-width: 1120px) {
+  .ai-chat-page {
+    grid-template-columns: 72px minmax(0, 1fr) minmax(260px, 300px);
   }
 
   .context-sidebar {
@@ -1926,6 +2146,7 @@ const loadSessionHistory = (session) => {
 
   .desktop-rail,
   .history-sidebar,
+  .agent-activity-panel,
   .context-sidebar {
     display: none;
   }

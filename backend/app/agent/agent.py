@@ -25,6 +25,15 @@ from app.utils.prompt_loader import load_prompt
 _token_encoder = None
 
 
+TOOL_STEP_TITLES = {
+    "rag_summary_tools": "已检索知识库",
+    "reorder_documents_tools": "已完成文档重排序",
+    "get_user_info_tools": "已读取用户信息",
+    "get_weather_tools": "已调用天气工具",
+    "what_time_is_now": "已读取当前时间",
+}
+
+
 def _get_encoder():
     global _token_encoder
     if _token_encoder is None:
@@ -64,6 +73,23 @@ def _max_tool_rounds() -> int:
         return max(1, int(os.getenv("AGENT_MAX_TOOL_ROUNDS", "8")))
     except (TypeError, ValueError):
         return 8
+
+
+def _format_agent_step(step: dict) -> dict:
+    """把内部工具调用记录转换成前端可展示的进度事件。"""
+    tool = step.get("tool") or "unknown_tool"
+    output = str(step.get("tool_output") or "")
+    failed = "失败" in output or "异常" in output
+    detail = output[:120]
+    if tool == "rag_summary_tools" and step.get("citation_count") is not None:
+        detail = f"已检索 {step['citation_count']} 个文档"
+    return {
+        "id": f"tool_{tool}",
+        "title": TOOL_STEP_TITLES.get(tool, f"已调用工具：{tool}"),
+        "status": "done",
+        "level": "warning" if failed else "success",
+        "detail": detail,
+    }
 
 
 class AgentLoop:
@@ -168,6 +194,15 @@ class AgentLoop:
           {"type": "usage", "tokens": int, ...}      —— 实时 token 估算
           {"type": "done",  "steps": list, "tokens"} —— 全部完成（精确总数）
         """
+        yield {
+            "type": "agent_step",
+            "data": {
+                "id": "task_understood",
+                "title": "已理解任务",
+                "status": "done",
+                "level": "success",
+            },
+        }
         messages = self._build_messages(history, query)
         steps = []
         on_agent_start(messages)
@@ -276,22 +311,35 @@ class AgentLoop:
             # 顺序执行各工具
             for tc in tool_calls_buf.values():
                 on_tool_call(tc["name"], tc["args"])
+                yield {
+                    "type": "agent_step",
+                    "data": {
+                        "id": f"tool_{tc['name']}",
+                        "title": f"正在调用工具：{tc['name']}",
+                        "status": "running",
+                        "level": "info",
+                    },
+                }
                 result = await self._execute_tool(tc["name"], tc["args"], identity)
                 on_tool_result(tc["name"], result)
 
                 # 紧邻工具执行点同步读取 citations 并固化到局部变量；
                 # 此处与工具内 set() 处于同一执行段（无 yield/无新 task），ContextVar 可靠
+                citation_count = None
                 if tc["name"] == "rag_summary_tools":
                     cites = get_rag_citations()
                     if cites:
                         collected_citations = cites
+                    citation_count = len(cites or [])
 
                 step = {
                     "tool": tc["name"],
                     "tool_input": tc["args"],
                     "tool_output": result,
+                    "citation_count": citation_count,
                 }
                 steps.append(step)
+                yield {"type": "agent_step", "data": _format_agent_step(step)}
                 yield {"type": "step", "data": step}
 
                 messages.append({
@@ -305,6 +353,15 @@ class AgentLoop:
             f"[Timing][Agent] stage=stream_total rounds={round_idx + 1} "
             f"steps={len(steps)} duration={time.perf_counter() - stream_total_t0:.3f}s"
         )
+        yield {
+            "type": "agent_step",
+            "data": {
+                "id": "answer_generated",
+                "title": "已生成分析结果",
+                "status": "done",
+                "level": "success",
+            },
+        }
         yield {"type": "done", "steps": steps, "tokens": committed_tokens, "citations": collected_citations}
 
 
@@ -346,8 +403,11 @@ async def get_agent_stream_response(
             yield f"data: {json.dumps({'type': 'response', 'content': event['data']}, ensure_ascii=False)}\n\n"
         elif event["type"] == "usage":
             yield f"data: {json.dumps({'type': 'usage', 'tokens': event['tokens'], 'estimated': True}, ensure_ascii=False)}\n\n"
+        elif event["type"] == "agent_step":
+            yield f"data: {json.dumps({'type': 'agent_step', 'data': event['data']}, ensure_ascii=False)}\n\n"
         elif event["type"] == "step":
             steps.append(event["data"])
+            yield f"data: {json.dumps({'type': 'agent_step', 'data': _format_agent_step(event['data'])}, ensure_ascii=False)}\n\n"
         elif event["type"] == "done":
             steps = event["steps"]
             total_tokens = event.get("tokens", 0)
