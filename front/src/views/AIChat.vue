@@ -401,7 +401,7 @@ const latestAssistantMessage = computed(() => (
 ));
 const latestAgentSteps = computed(() => latestAssistantMessage.value?.steps || []);
 const latestToolResults = computed(() => (
-  latestAgentSteps.value.filter(step => step.id?.startsWith('tool_') && step.status !== 'running')
+  latestAgentSteps.value.filter(step => step.id?.startsWith('tool_') && ['done', 'warning', 'error'].includes(step.status))
 ));
 const currentSessionTitle = computed(() => {
   const currentSession = sessionStore.currentSession
@@ -473,6 +473,9 @@ const formatMessage = (content) => {
 };
 
 const agentStepIcon = (step) => {
+  if (step.status === 'todo') return 'clock-o';
+  if (step.status === 'running') return 'play-circle-o';
+  if (step.status === 'done') return 'success';
   if (step.level === 'warning') return 'warning-o';
   if (step.level === 'error') return 'close';
   return 'success';
@@ -617,6 +620,17 @@ const fetchAIResponse = async (userMessage) => {
           const json = JSON.parse(data);
           
           switch (json.type) {
+            case 'agent_plan': {
+              const lastMsg = messages.value[messages.value.length - 1];
+              if (lastMsg && lastMsg.role === 'assistant') {
+                lastMsg.steps = Array.isArray(json.data) ? json.data : [];
+                lastMsg.usedRag = lastMsg.steps.some(step => step.id === 'tool_rag_summary_tools');
+                await nextTick();
+                scrollToBottom();
+              }
+              break;
+            }
+            case 'agent_step_update':
             case 'agent_step': {
               const lastMsg = messages.value[messages.value.length - 1];
               if (lastMsg && lastMsg.role === 'assistant') {
@@ -1626,6 +1640,20 @@ const loadSessionHistory = (session) => {
 
 .agent-step-warning .agent-step-icon {
   color: var(--amber);
+}
+
+.agent-step-info .agent-step-icon {
+  color: var(--primary);
+}
+
+.agent-step-muted,
+.agent-step-todo {
+  color: #8a98a8;
+}
+
+.agent-step-muted .agent-step-icon,
+.agent-step-todo .agent-step-icon {
+  color: #a5b0bd;
 }
 
 .agent-step-title {

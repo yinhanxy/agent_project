@@ -19,6 +19,38 @@ class _FakeSessionManager:
 
 async def _fake_agent_stream(query, history, identity=None):
     yield {
+        "type": "agent_plan",
+        "data": [
+            {
+                "id": "task_understood",
+                "title": "理解用户问题",
+                "status": "done",
+                "level": "success",
+            },
+            {
+                "id": "tool_rag_summary_tools",
+                "title": "检索相关知识库",
+                "status": "todo",
+                "level": "muted",
+            },
+            {
+                "id": "answer_generated",
+                "title": "生成最终回答",
+                "status": "todo",
+                "level": "muted",
+            },
+        ],
+    }
+    yield {
+        "type": "agent_step_update",
+        "data": {
+            "id": "tool_rag_summary_tools",
+            "status": "running",
+            "level": "info",
+            "detail": "正在检索相关知识库",
+        },
+    }
+    yield {
         "type": "step",
         "data": {
             "tool": "rag_summary_tools",
@@ -73,5 +105,59 @@ async def test_agent_stream_response_sends_tool_steps_to_frontend(monkeypatch):
             "status": "done",
             "level": "success",
             "detail": "检索到 2 个文档",
+        },
+    } in events
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_response_sends_plan_and_status_updates(monkeypatch):
+    monkeypatch.setattr(
+        db_session_manager,
+        "database_session_manager",
+        _FakeSessionManager(),
+    )
+    monkeypatch.setattr(agent.agent_loop, "stream", _fake_agent_stream)
+
+    chunks = [
+        chunk
+        async for chunk in agent.get_agent_stream_response(
+            "什么是 LangChain",
+            "session-1",
+            RequestIdentity(user_id="u1"),
+        )
+    ]
+
+    events = _decode_sse_events(chunks)
+
+    assert {
+        "type": "agent_plan",
+        "data": [
+            {
+                "id": "task_understood",
+                "title": "理解用户问题",
+                "status": "done",
+                "level": "success",
+            },
+            {
+                "id": "tool_rag_summary_tools",
+                "title": "检索相关知识库",
+                "status": "todo",
+                "level": "muted",
+            },
+            {
+                "id": "answer_generated",
+                "title": "生成最终回答",
+                "status": "todo",
+                "level": "muted",
+            },
+        ],
+    } in events
+    assert {
+        "type": "agent_step_update",
+        "data": {
+            "id": "tool_rag_summary_tools",
+            "status": "running",
+            "level": "info",
+            "detail": "正在检索相关知识库",
         },
     } in events

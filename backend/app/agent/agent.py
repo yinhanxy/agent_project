@@ -33,6 +33,22 @@ TOOL_STEP_TITLES = {
     "what_time_is_now": "已读取当前时间",
 }
 
+TOOL_PLAN_TITLES = {
+    "rag_summary_tools": "检索相关知识库",
+    "reorder_documents_tools": "重排序候选文档",
+    "get_user_info_tools": "读取用户信息",
+    "get_weather_tools": "调用天气工具",
+    "what_time_is_now": "读取当前时间",
+}
+
+TOOL_RUNNING_DETAILS = {
+    "rag_summary_tools": "正在检索相关知识库",
+    "reorder_documents_tools": "正在重排序候选文档",
+    "get_user_info_tools": "正在读取用户信息",
+    "get_weather_tools": "正在调用天气工具",
+    "what_time_is_now": "正在读取当前时间",
+}
+
 
 def _get_encoder():
     global _token_encoder
@@ -90,6 +106,50 @@ def _format_agent_step(step: dict) -> dict:
         "level": "warning" if failed else "success",
         "detail": detail,
     }
+
+
+def _build_agent_plan(tool_calls: list[dict] = None, answer_status: str = "todo") -> list[dict]:
+    """生成可公开展示的执行计划，不暴露模型隐藏推理。"""
+    steps = [
+        {
+            "id": "task_understood",
+            "title": "理解用户问题",
+            "status": "done",
+            "level": "success",
+        }
+    ]
+    for tc in tool_calls or []:
+        tool = tc.get("name") or "unknown_tool"
+        steps.append({
+            "id": f"tool_{tool}",
+            "title": TOOL_PLAN_TITLES.get(tool, f"调用工具：{tool}"),
+            "status": "todo",
+            "level": "muted",
+        })
+    steps.append({
+        "id": "answer_generated",
+        "title": "生成最终回答",
+        "status": answer_status,
+        "level": "info" if answer_status == "running" else "muted",
+    })
+    return steps
+
+
+def _format_step_update(
+    step_id: str,
+    status: str,
+    level: str = None,
+    detail: str = None,
+    title: str = None,
+) -> dict:
+    update = {"id": step_id, "status": status}
+    if level:
+        update["level"] = level
+    if detail:
+        update["detail"] = detail
+    if title:
+        update["title"] = title
+    return update
 
 
 class AgentLoop:
@@ -190,18 +250,15 @@ class AgentLoop:
 
         yield 事件：
           {"type": "token", "data": str}             —— LLM 输出 token
-          {"type": "step",  "data": {tool, ...}}     —— 工具调用记录
+          {"type": "agent_plan", "data": list}        —— 可公开执行计划
+          {"type": "agent_step_update", "data": dict} —— 执行计划状态更新
+          {"type": "step",  "data": {tool, ...}}      —— 工具调用记录
           {"type": "usage", "tokens": int, ...}      —— 实时 token 估算
           {"type": "done",  "steps": list, "tokens"} —— 全部完成（精确总数）
         """
         yield {
-            "type": "agent_step",
-            "data": {
-                "id": "task_understood",
-                "title": "已理解任务",
-                "status": "done",
-                "level": "success",
-            },
+            "type": "agent_plan",
+            "data": _build_agent_plan([], answer_status="todo"),
         }
         messages = self._build_messages(history, query)
         steps = []
@@ -214,6 +271,16 @@ class AgentLoop:
         stream_total_t0 = time.perf_counter()
         for round_idx in range(max_rounds + 1):
             on_model_call(messages)
+            if round_idx > 0:
+                yield {
+                    "type": "agent_step_update",
+                    "data": _format_step_update(
+                        "answer_generated",
+                        "running",
+                        "info",
+                        "正在基于已完成步骤生成回答",
+                    ),
+                }
             # 最后一轮禁用工具，强制模型输出文字答复，保证循环必然终止
             last_round = round_idx == max_rounds
             prompt_est = _estimate_messages_tokens(messages)
@@ -293,6 +360,11 @@ class AgentLoop:
             if not tool_calls_buf:
                 break  # 无工具调用，流式输出已完成
 
+            yield {
+                "type": "agent_plan",
+                "data": _build_agent_plan(list(tool_calls_buf.values())),
+            }
+
             # 追加 assistant 消息（含 tool_calls 结构）
             tool_calls_list = [
                 {
@@ -312,13 +384,13 @@ class AgentLoop:
             for tc in tool_calls_buf.values():
                 on_tool_call(tc["name"], tc["args"])
                 yield {
-                    "type": "agent_step",
-                    "data": {
-                        "id": f"tool_{tc['name']}",
-                        "title": f"正在调用工具：{tc['name']}",
-                        "status": "running",
-                        "level": "info",
-                    },
+                    "type": "agent_step_update",
+                    "data": _format_step_update(
+                        f"tool_{tc['name']}",
+                        "running",
+                        "info",
+                        TOOL_RUNNING_DETAILS.get(tc["name"], f"正在调用工具：{tc['name']}"),
+                    ),
                 }
                 result = await self._execute_tool(tc["name"], tc["args"], identity)
                 on_tool_result(tc["name"], result)
@@ -339,7 +411,7 @@ class AgentLoop:
                     "citation_count": citation_count,
                 }
                 steps.append(step)
-                yield {"type": "agent_step", "data": _format_agent_step(step)}
+                yield {"type": "agent_step_update", "data": _format_agent_step(step)}
                 yield {"type": "step", "data": step}
 
                 messages.append({
@@ -354,13 +426,14 @@ class AgentLoop:
             f"steps={len(steps)} duration={time.perf_counter() - stream_total_t0:.3f}s"
         )
         yield {
-            "type": "agent_step",
-            "data": {
-                "id": "answer_generated",
-                "title": "已生成分析结果",
-                "status": "done",
-                "level": "success",
-            },
+            "type": "agent_step_update",
+            "data": _format_step_update(
+                "answer_generated",
+                "done",
+                "success",
+                "已生成最终回答",
+                "生成最终回答",
+            ),
         }
         yield {"type": "done", "steps": steps, "tokens": committed_tokens, "citations": collected_citations}
 
@@ -403,6 +476,10 @@ async def get_agent_stream_response(
             yield f"data: {json.dumps({'type': 'response', 'content': event['data']}, ensure_ascii=False)}\n\n"
         elif event["type"] == "usage":
             yield f"data: {json.dumps({'type': 'usage', 'tokens': event['tokens'], 'estimated': True}, ensure_ascii=False)}\n\n"
+        elif event["type"] == "agent_plan":
+            yield f"data: {json.dumps({'type': 'agent_plan', 'data': event['data']}, ensure_ascii=False)}\n\n"
+        elif event["type"] == "agent_step_update":
+            yield f"data: {json.dumps({'type': 'agent_step_update', 'data': event['data']}, ensure_ascii=False)}\n\n"
         elif event["type"] == "agent_step":
             yield f"data: {json.dumps({'type': 'agent_step', 'data': event['data']}, ensure_ascii=False)}\n\n"
         elif event["type"] == "step":
