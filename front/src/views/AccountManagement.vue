@@ -651,7 +651,8 @@ onActivated(() => {
 
 @media screen and (min-width: 901px) {
   .account-container {
-    min-height: 100%;
+    min-height: 0;
+    height: 100%;
     background: transparent;
     overflow-y: auto;
   }
