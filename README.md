@@ -13,7 +13,7 @@
 - [项目结构](#项目结构)
 - [环境要求](#环境要求)
 - [配置说明](#配置说明)
-- [本地启动](#本地启动)
+- [部署与启动](#部署与启动)
 - [页面入口](#页面入口)
 - [API 速览](#api-速览)
 - [RAG 与知识库机制](#rag-与知识库机制)
@@ -36,33 +36,39 @@
 
 ## 项目演示
 
-以下截图来自移动端实际界面，覆盖 AI 问答、会话管理、知识库和账号体系等主要场景。
+以下截图来自项目实际界面，覆盖 AI 问答、知识库管理、文档编译和账号权限等主要场景。
 
-### AI 问答与会话
+### AI 问答
 
-| 对话页面 | 会话管理 |
-| --- | --- |
-| <img src="./docs/images/对话页面.png" width="260" alt="对话页面" /> | <img src="./docs/images/会话管理页面.png" width="260" alt="会话管理页面" /> |
+<img src="./docs/images/对话页面.jpg" width="860" alt="对话页面" />
 
-基于个人或共享知识库进行流式问答，回答支持 Markdown 渲染与来源引用；会话页可查看、切换和删除历史对话。
+基于个人或共享知识库进行流式问答，回答支持 Markdown 渲染、来源引用、Agent 执行步骤和审批操作。
 
 ### 知识库管理
 
-| 知识库列表 | 知识库详情 | 创建知识库 |
-| --- | --- | --- |
-| <img src="./docs/images/知识库页面1.png" width="240" alt="知识库列表" /> | <img src="./docs/images/知识库页面2.png" width="240" alt="知识库详情" /> | <img src="./docs/images/创建知识库页面.png" width="240" alt="创建知识库" /> |
+<img src="./docs/images/知识库管理页面2.jpg" width="860" alt="知识库管理页面" />
 
-支持创建个人、部门、公司范围的知识库，上传与管理文档，并在指定知识库内发起问答。文档管理页可查看分块情况、去重信息并删除文档。
+支持个人文档和共享知识库两个视图，管理员可创建个人、公开、部门、管理员专属等不同范围的知识库。
 
-<img src="./docs/images/知识库管理页面.png" width="260" alt="知识库管理页面" />
+<img src="./docs/images/创建知识库选项.jpg" width="860" alt="创建知识库选项" />
 
-### 个人中心与账号管理
+创建知识库时可填写名称、描述并选择访问范围，便于按个人、部门或管理权限隔离知识。
 
-| 个人信息 | 账号管理 |
-| --- | --- |
-| <img src="./docs/images/个人信息页面.png" width="260" alt="个人信息页面" /> | <img src="./docs/images/账号管理页面.png" width="260" alt="账号管理页面" /> |
+### 文档上传与编译
 
-「我的」页提供用户资料与设置入口；管理员可在账号管理页查看用户列表并设置管理员权限。
+<img src="./docs/images/知识库管理页面.jpg" width="860" alt="个人知识库管理页面" />
+
+个人知识库支持上传 `PDF`、`TXT`、`MD`、`DOCX`、`PPTX` 等文件，并展示资源概览、检索配置和危险操作。
+
+<img src="./docs/images/知识库编译页面.jpg" width="860" alt="知识库文档编译页面" />
+
+知识库详情页可查看文档列表、分块数量、更新时间，并支持继续上传或删除指定文档。
+
+### 账号管理
+
+<img src="./docs/images/账号管理页面.jpg" width="860" alt="账号管理页面" />
+
+管理员可在账号管理页查看用户列表、创建账号、分配部门，并设置普通用户或管理员权限。
 
 ## 系统架构
 
@@ -262,11 +268,54 @@ REDIS_CACHE_URL=redis://127.0.0.1:6379/1
 - Windows 本地建议把 `localhost` 写成 `127.0.0.1`，避免 IPv6 回退导致接口或数据库请求变慢。
 - 使用 Milvus 时先启动 `docker-compose.milvus.yml`，并把 `VECTOR_STORE_BACKEND=milvus`。
 
-## 本地启动
+## 部署与启动
 
-以下命令以 PowerShell 为例。
+以下步骤面向一台全新的部署机器，命令以 PowerShell 为例。部署时请把路径、数据库账号、模型和 API Key 替换为自己的环境，不要使用本机示例路径。
 
-### 1. 安装依赖
+### 1. 获取代码
+
+```powershell
+git clone <your-repo-url> LangChain-RAG-FastAPI-Service
+cd LangChain-RAG-FastAPI-Service
+```
+
+如果部署到 Linux 服务器，命令基本一致，只需要把虚拟环境路径和启动命令改成 Linux 写法，例如 `.venv/bin/python`、`.venv/bin/uvicorn`。
+
+### 2. 准备基础环境
+
+建议提前安装：
+
+| 依赖 | 用途 |
+| --- | --- |
+| Python 3.12+ | FastAPI RAG 服务 |
+| Python 3.10+ | Django 用户服务 |
+| uv | Python 依赖安装与虚拟环境管理 |
+| Node.js 20.19+ 或 22.12+ | Vue 3 / Vite 前端 |
+| MySQL 8.x | 用户、会话、知识库和文档元数据 |
+| Redis 7.x | 限流、缓存、Token 黑名单 |
+| Ollama 或阿里云百炼 API Key | Embedding 与聊天模型 |
+| Docker / Docker Compose | 可选，用于 Redis、MySQL、Milvus |
+
+Redis 可以直接用 Docker 启动：
+
+```powershell
+docker run -d --name redis-rag -p 6379:6379 redis:alpine
+```
+
+如果使用 Milvus 作为向量库：
+
+```powershell
+docker compose -f docker-compose.milvus.yml up -d
+```
+
+如果使用 Ollama embedding：
+
+```powershell
+ollama serve
+ollama pull qwen3-embedding:0.6b
+```
+
+### 3. 安装项目依赖
 
 ```powershell
 cd backend
@@ -279,42 +328,53 @@ cd ..\front
 npm install
 ```
 
-### 2. 启动基础依赖
+### 4. 创建数据库
 
-MySQL 需要提前创建两个数据库，名称可以按 `.env` 调整：
+MySQL 中需要创建两个数据库，名称可以按 `.env` 调整：
 
 ```sql
 CREATE DATABASE chat_history CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE DATABASE user_service CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-Redis 可以用 Docker 启动：
+### 5. 配置环境变量
+
+复制示例配置，并按部署机器实际信息修改：
 
 ```powershell
-docker run -d --name redis-rag -p 6379:6379 redis:alpine
+Copy-Item backend\.env.example backend\.env
+Copy-Item DjangoUserService\.env.example DjangoUserService\.env
 ```
 
-如果使用 Ollama embedding：
+重点检查以下配置：
 
-```powershell
-ollama serve
-ollama pull qwen3-embedding:0.6b
-```
+| 文件 | 配置项 | 说明 |
+| --- | --- | --- |
+| `backend/.env` | `MYSQL_*` | FastAPI 使用的 MySQL 连接 |
+| `backend/.env` | `REDIS_*` | Redis 地址和 DB |
+| `backend/.env` | `LLM_TYPE`、`EMBED_MODEL_TYPE` | 选择阿里云百炼或 Ollama |
+| `backend/.env` | `ALIYUN_ACCESS_KEY_SECRET` | 使用百炼时填写自己的 API Key |
+| `backend/.env` | `DJANGO_API_URL` | Django 用户服务地址，默认 `http://127.0.0.1:8001` |
+| `backend/.env` | `VECTOR_STORE_BACKEND` | `chroma` 或 `milvus` |
+| `backend/.env` | `RERANKER_MODEL_PATH` | 本机 reranker 模型目录，按自己的机器修改 |
+| `backend/.env` | `SECRET_KEY` | 必须与 Django 的 `JWT_SECRET_KEY` 一致 |
+| `DjangoUserService/.env` | `DB_*` | Django 用户库连接 |
+| `DjangoUserService/.env` | `JWT_SECRET_KEY` | 必须与 FastAPI 的 `SECRET_KEY` 一致 |
 
-如果使用 Milvus：
+Windows 部署建议把数据库和服务地址写成 `127.0.0.1`，不要写 `localhost`，可避免 IPv6 回退导致请求变慢。
 
-```powershell
-docker compose -f docker-compose.milvus.yml up -d
-```
-
-### 3. 初始化 Django 数据库
+### 6. 初始化数据库
 
 ```powershell
 cd DjangoUserService
 .\.venv\Scripts\python.exe manage.py migrate
 ```
 
-### 4. 启动三个应用服务
+FastAPI 会在启动时自动执行 SQLAlchemy `create_all`，用于创建会话、消息、知识库、文档等表。Django 的用户表需要先执行 `migrate`。
+
+### 7. 启动服务
+
+需要启动三个应用服务：Django 用户服务、FastAPI RAG 服务、Vue 前端。
 
 Django 用户服务：
 
@@ -337,7 +397,73 @@ cd front
 npm run dev -- --host 127.0.0.1
 ```
 
-### 5. 访问地址
+如果部署到局域网或服务器，请把前端 host 改成 `0.0.0.0`，并开放 `3000`、`8000`、`8001` 对应端口。生产环境建议只暴露前端和网关端口，由 Nginx 反向代理到后端服务。
+
+### 8. 生产部署建议
+
+开发启动可以直接使用 `npm run dev` 和 `--reload`。生产环境建议：
+
+1. 前端执行构建并把 `front/dist` 交给 Nginx 托管：
+
+```powershell
+cd front
+npm run build
+```
+
+2. Nginx 将 `/api` 代理到 FastAPI，将 `/user` 和 `/file` 代理到 Django。
+3. FastAPI 使用 `uvicorn` 或进程管理器常驻运行，Django 使用 `gunicorn`、`uvicorn` 或平台服务管理器常驻运行。
+4. 所有密钥、数据库密码、API Key 通过服务器环境变量或 `.env` 管理，不要提交到仓库。
+5. MySQL、Redis、Milvus 和模型目录应使用持久化磁盘，避免容器重建后数据丢失。
+
+Nginx 反向代理示例：
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    root /path/to/LangChain-RAG-FastAPI-Service/front/dist;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location /user/ {
+        proxy_pass http://127.0.0.1:8001/user/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location /file/ {
+        proxy_pass http://127.0.0.1:8001/file/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+### 9. 验证部署
+
+```powershell
+Invoke-WebRequest -Uri "http://127.0.0.1:8000/" -UseBasicParsing
+Invoke-WebRequest -Uri "http://127.0.0.1:8001/docs/" -UseBasicParsing
+Invoke-WebRequest -Uri "http://127.0.0.1:3000/" -UseBasicParsing
+```
+
+期望结果：
+
+- FastAPI 根路由返回 `{"message":"Hello World"}`。
+- Django 文档页可访问。
+- 前端页面可打开，并能完成注册、登录、上传文档和知识库问答。
+
+### 10. 访问地址
 
 | 服务 | 地址 |
 | --- | --- |
