@@ -1028,7 +1028,7 @@ const loadSessionHistory = (session) => {
   --shadow: 0 18px 50px rgba(20, 42, 68, 0.1);
 
   display: grid;
-  grid-template-columns: 76px minmax(460px, 1.2fr) minmax(280px, 320px) minmax(300px, 340px);
+  grid-template-columns: 76px minmax(260px, 300px) minmax(440px, 1fr) minmax(280px, 320px) minmax(300px, 340px);
   width: 100vw;
   height: 100dvh;
   min-height: 100vh;
@@ -1098,12 +1098,12 @@ const loadSessionHistory = (session) => {
 }
 
 .history-sidebar {
-  display: none;
+  display: flex;
   flex-direction: column;
   overflow: hidden;
   padding: 18px 14px;
   border-right: 1px solid var(--line);
-  background: rgba(250, 252, 254, 0.92);
+  background: rgba(250, 252, 254, 0.96);
 }
 
 .history-header,
@@ -2149,15 +2149,20 @@ const loadSessionHistory = (session) => {
 
 @media screen and (max-width: 1380px) {
   .ai-chat-page {
-    grid-template-columns: 72px minmax(420px, 1fr) minmax(260px, 300px) minmax(280px, 320px);
+    grid-template-columns: 72px minmax(250px, 290px) minmax(420px, 1fr) minmax(260px, 300px);
+  }
+
+  .context-sidebar {
+    display: none;
   }
 }
 
 @media screen and (max-width: 1120px) {
   .ai-chat-page {
-    grid-template-columns: 72px minmax(0, 1fr) minmax(260px, 300px);
+    grid-template-columns: 72px minmax(240px, 280px) minmax(0, 1fr);
   }
 
+  .agent-activity-panel,
   .context-sidebar {
     display: none;
   }
@@ -2165,18 +2170,24 @@ const loadSessionHistory = (session) => {
 
 @media screen and (max-width: 900px) {
   .ai-chat-page {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(220px, 260px) minmax(360px, 1fr);
     width: 100%;
+    min-width: 580px;
     padding-bottom: calc(58px + env(safe-area-inset-bottom));
     background: linear-gradient(180deg, #f8faf9 0%, var(--page-bg) 42%, #eef3f5 100%);
+    overflow-x: auto;
   }
 
   .desktop-rail,
-  .history-sidebar,
   .agent-activity-panel,
   .context-sidebar {
     display: none;
+  }
+
+  .history-sidebar {
+    display: flex;
+    padding: 14px 12px;
   }
 
   .chat-shell {
