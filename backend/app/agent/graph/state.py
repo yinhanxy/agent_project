@@ -24,6 +24,9 @@ class AgentState(TypedDict, total=False):
     citations: list                     # list[dict]，复用现有 citations 结构
     is_enough: bool
 
+    # Task 产出
+    task_messages: list                 # finalize 用的任务专属 LLM messages；空则走默认问答
+
     # 输出
     final_answer: str
 
