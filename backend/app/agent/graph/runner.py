@@ -33,7 +33,16 @@ class GraphRunner:
         }
 
         full_answer: list[str] = []
-        async for item in self._graph.astream(state, stream_mode=["messages", "custom"]):
+        final_citations: list = []
+        async for item in self._graph.astream(
+            state, stream_mode=["messages", "custom", "values"]
+        ):
+            mode, payload = item
+            if mode == "values":
+                # values 模式每步产出全量 state 快照，保留最后一次的 citations
+                if isinstance(payload, dict) and payload.get("citations") is not None:
+                    final_citations = payload["citations"]
+                continue
             for event in translate_stream_item(item):
                 if event["type"] == "token":
                     full_answer.append(event["data"])
@@ -44,7 +53,7 @@ class GraphRunner:
             "data": {"id": "answer_generated", "status": "done",
                      "level": "success", "detail": "已生成最终回答", "title": "生成最终回答"},
         }
-        yield {"type": "done", "steps": [], "tokens": 0, "citations": []}
+        yield {"type": "done", "steps": [], "tokens": 0, "citations": final_citations}
 
 
 # 全局单例（图编译一次复用）
