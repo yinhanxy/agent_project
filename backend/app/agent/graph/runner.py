@@ -7,7 +7,7 @@ from app.utils.auth_utils import RequestIdentity
 
 def _initial_plan() -> list:
     return [
-        {"id": "task_understood", "title": "理解用户问题", "status": "done", "level": "success"},
+        {"id": "task_understood", "title": "识别任务类型", "status": "todo", "level": "muted"},
         {"id": "answer_generated", "title": "生成最终回答", "status": "todo", "level": "muted"},
     ]
 
@@ -27,6 +27,7 @@ class GraphRunner:
             "query": query,
             "history": history or [],
             "identity": identity,
+            "plan": {},
             "documents": [],
             "citations": [],
             "trace": [],
