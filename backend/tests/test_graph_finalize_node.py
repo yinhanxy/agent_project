@@ -27,3 +27,27 @@ async def test_finalize_node_returns_final_answer(monkeypatch):
     assert update["final_answer"] == "这是最终回答"
     assert isinstance(update["trace"], list)
     assert update["trace"][0]["agent"] == "finalize"
+
+
+@pytest.mark.asyncio
+async def test_finalize_prefers_task_messages(monkeypatch):
+    captured = {}
+
+    async def _fake_ainvoke(messages):
+        captured["messages"] = messages
+        return _FakeMsg("对比表内容")
+
+    import app.agent.graph.nodes.finalize as fz
+
+    class _FakeChatModel:
+        ainvoke = staticmethod(_fake_ainvoke)
+
+    monkeypatch.setattr(fz, "chat_model", _FakeChatModel())
+
+    task_msgs = [{"role": "system", "content": "对比助手"},
+                 {"role": "user", "content": "对比文档"}]
+    state = {"query": "随便", "documents": ["d"], "task_messages": task_msgs}
+    update = await finalize_node(state)
+
+    assert captured["messages"] == task_msgs
+    assert update["final_answer"] == "对比表内容"

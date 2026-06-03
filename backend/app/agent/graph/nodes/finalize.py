@@ -29,7 +29,7 @@ async def finalize_node(state: AgentState) -> dict:
     writer({"kind": "step", "id": "answer_generated", "status": "running",
             "level": "info", "detail": "正在生成最终回答", "title": "生成最终回答"})
 
-    messages = _build_messages(state)
+    messages = state.get("task_messages") or _build_messages(state)
     msg = await chat_model.ainvoke(messages)
     answer = msg.content if hasattr(msg, "content") else str(msg)
 
