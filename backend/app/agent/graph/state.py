@@ -16,6 +16,9 @@ class AgentState(TypedDict, total=False):
     history: list                       # [(user, assistant), ...]
     identity: Optional[RequestIdentity]
 
+    # Coordinator 产出
+    plan: dict                          # {task_type: str, need_retrieval: bool, reason: str}
+
     # Knowledge 产出
     documents: list                     # list[str]
     citations: list                     # list[dict]，复用现有 citations 结构
