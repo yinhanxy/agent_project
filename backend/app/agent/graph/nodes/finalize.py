@@ -1,5 +1,4 @@
-from langgraph.config import get_stream_writer
-
+from app.agent.graph._stream import safe_get_stream_writer
 from app.agent.graph.state import AgentState
 from app.utils.factory import chat_model
 from app.utils.prompt_loader import load_prompt
@@ -24,17 +23,9 @@ def _build_messages(state: AgentState) -> list:
     ]
 
 
-def _safe_get_stream_writer():
-    """在没有 LangGraph 运行时上下文时（如单元测试）返回 no-op writer。"""
-    try:
-        return get_stream_writer()
-    except RuntimeError:
-        return lambda _: None
-
-
 async def finalize_node(state: AgentState) -> dict:
     """生成最终回答。token 由 LangGraph messages 模式自动流出（节点名 finalize）。"""
-    writer = _safe_get_stream_writer()
+    writer = safe_get_stream_writer()
     writer({"kind": "step", "id": "answer_generated", "status": "running",
             "level": "info", "detail": "正在生成最终回答", "title": "生成最终回答"})
 
