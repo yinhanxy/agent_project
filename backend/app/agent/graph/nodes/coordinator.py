@@ -76,3 +76,9 @@ async def coordinator_node(state: AgentState) -> dict:
         "trace": [{"agent": "coordinator", "status": "done",
                    "output": json.dumps(plan, ensure_ascii=False)}],
     }
+
+
+def route_after_coordinator(state: AgentState) -> str:
+    """条件边：need_retrieval 为真走 knowledge，否则直接 finalize。缺 plan 时保守走 knowledge。"""
+    plan = state.get("plan") or {}
+    return "knowledge" if plan.get("need_retrieval", True) else "finalize"
