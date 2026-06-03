@@ -13,6 +13,7 @@ from app.agent.agent_middleware import (
     on_model_call, on_model_response,
 )
 from app.agent.agent_tools import TOOLS, TOOL_SCHEMAS, get_rag_citations
+from app.agent.graph.runner import graph_runner
 from app.core.logger_handler import logger
 from app.services import session_manager as sm
 from app.utils.auth_utils import RequestIdentity
@@ -470,7 +471,13 @@ async def get_agent_stream_response(
     total_tokens = 0
     citations: list = []
 
-    async for event in agent_loop.stream(query, history, identity=identity):
+    engine = os.getenv("AGENT_ENGINE", "loop").strip().lower()
+    if engine == "graph":
+        event_source = graph_runner.stream(query, history, identity=identity)
+    else:
+        event_source = agent_loop.stream(query, history, identity=identity)
+
+    async for event in event_source:
         if event["type"] == "token":
             full_response.append(event["data"])
             yield f"data: {json.dumps({'type': 'response', 'content': event['data']}, ensure_ascii=False)}\n\n"
