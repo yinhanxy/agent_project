@@ -46,6 +46,7 @@ dependencies = [
     "jieba>=0.42.1",
     "langchain-milvus~=0.3.3",
     "pymilvus~=2.6.14",
+    "langgraph>=1.1.6",
 ]
 
 # 开发依赖
