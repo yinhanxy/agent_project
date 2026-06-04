@@ -54,8 +54,8 @@
 import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import { showToast } from 'vant'
-import WorkbenchLayout from '../components/WorkbenchLayout.vue'
 import DesktopRail from '../components/DesktopRail.vue'
+import WorkbenchLayout from '../components/WorkbenchLayout.vue'
 
 const gaps = ref([])
 const loading = ref(false)
