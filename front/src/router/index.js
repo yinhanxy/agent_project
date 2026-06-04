@@ -102,6 +102,16 @@ const routes = [
       requiresAuth: true
     }
   },
+  {
+    path: '/knowledge-gaps',
+    name: 'KnowledgeGaps',
+    component: () => import('../views/KnowledgeGaps.vue'),
+    meta: {
+      title: '知识缺口',
+      keepAlive: false,
+      requiresAuth: true
+    }
+  },
 ]
 
 const router = createRouter({
