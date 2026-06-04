@@ -28,6 +28,28 @@ _BLACKLIST_REDIS_URL = os.getenv("REDIS_BLACKLIST_URL", "redis://127.0.0.1:6379/
 _blacklist_redis = None
 
 
+def request_django(
+    method: str,
+    url: str,
+    token: str,
+    json_body: Optional[Dict[str, Any]] = None,
+    timeout: int = 10,
+):
+    """请求本机 Django 服务，显式忽略系统 HTTP 代理。"""
+    session = requests.Session()
+    session.trust_env = False
+    return session.request(
+        method,
+        url,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        json=json_body,
+        timeout=timeout,
+    )
+
+
 def _get_blacklist_redis():
     global _blacklist_redis
     if _blacklist_redis is None:
@@ -121,18 +143,7 @@ async def fetch_user_info_from_django_api(token: str, url: str) -> Optional[Dict
     """
 
     try:
-        # 构建请求头
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
-        # 调用Django API，禁用系统代理（避免本地127.0.0.1请求被代理拦截）
-        response = requests.get(
-            url=url,
-            headers=headers,
-            proxies={"http": None, "https": None},
-            timeout=10,
-        )
+        response = request_django("GET", url, token)
         
         if response.status_code == 200:
             resp_json = response.json()

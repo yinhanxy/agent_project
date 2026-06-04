@@ -3,7 +3,6 @@ import asyncio
 import uuid
 import os
 
-import requests
 from fastapi.routing import APIRouter
 from fastapi import UploadFile, File, Depends, HTTPException, Query, Body
 from fastapi.responses import StreamingResponse
@@ -20,7 +19,7 @@ from app.schemas.models import (
 )
 from app.utils.auth_utils import (
     get_current_user_id, get_current_user_is_admin,
-    get_current_identity, RequestIdentity,
+    get_current_identity, RequestIdentity, request_django,
 )
 from app.core.success_response import success_response
 from app.core.rate_limit import rate_limit
@@ -40,17 +39,7 @@ async def admin_list_users(
     """管理员：获取所有用户列表"""
     if not is_admin:
         raise HTTPException(status_code=403, detail="无权限")
-    loop = asyncio.get_event_loop()
-    resp = await loop.run_in_executor(
-        None,
-        lambda: requests.get(
-            f"{DJANGO_API_URL}/user/list/",
-            headers={"Authorization": f"Bearer {credentials.credentials}"},
-            proxies={"http": None, "https": None},
-            timeout=15,
-        ),
-    )
-    return resp.json()
+    return await _proxy_django("GET", "/user/list/", credentials.credentials)
 
 
 @chat_router.patch("/admin/users/{user_uuid}/set-admin")
@@ -62,17 +51,9 @@ async def admin_set_admin(
     """管理员：切换用户管理员权限"""
     if not is_admin:
         raise HTTPException(status_code=403, detail="无权限")
-    loop = asyncio.get_event_loop()
-    resp = await loop.run_in_executor(
-        None,
-        lambda: requests.patch(
-            f"{DJANGO_API_URL}/user/{user_uuid}/set-admin/",
-            headers={"Authorization": f"Bearer {credentials.credentials}"},
-            proxies={"http": None, "https": None},
-            timeout=15,
-        ),
+    return await _proxy_django(
+        "PATCH", f"/user/{user_uuid}/set-admin/", credentials.credentials
     )
-    return resp.json()
 
 
 # ── 部门管理代理（转发 Django，仅总管理员）────────────────────────────────────
@@ -82,16 +63,8 @@ async def _proxy_django(method: str, path: str, token: str, json_body=None):
     loop = asyncio.get_event_loop()
     resp = await loop.run_in_executor(
         None,
-        lambda: requests.request(
-            method,
-            f"{DJANGO_API_URL}{path}",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            },
-            json=json_body,
-            proxies={"http": None, "https": None},
-            timeout=15,
+        lambda: request_django(
+            method, f"{DJANGO_API_URL}{path}", token, json_body=json_body, timeout=15
         ),
     )
     return resp.json()
