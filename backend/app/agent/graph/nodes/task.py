@@ -45,8 +45,10 @@ async def task_node(state: AgentState) -> dict:
 
 
 def route_after_knowledge(state: AgentState) -> str:
-    """knowledge 之后：任务类型且检索到文档则走 task，否则直接 finalize。"""
+    """knowledge 之后的路由。缺口判断优先于 task（无依据不强行生成）。"""
     plan = state.get("plan") or {}
+    if not state.get("is_enough", True) or plan.get("task_type") == "knowledge_gap":
+        return "knowledge_gap"
     if plan.get("task_type") in TASK_TYPES_NEEDING_TASK and state.get("documents"):
         return "task"
     return "finalize"
