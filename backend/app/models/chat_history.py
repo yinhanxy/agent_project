@@ -121,3 +121,19 @@ class ChildChunk(Base):
     content = Column(Text, nullable=False)
     chunk_index = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class KnowledgeGap(Base):
+    """知识缺口记录：检索不足或被判定为缺口类问题时生成，供管理员补充知识库。"""
+    __tablename__ = "knowledge_gaps"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(64), nullable=False, index=True)   # 缺口产生者
+    dept_id = Column(String(64), nullable=True, index=True)    # 部门归属（备用）
+    title = Column(String(255), nullable=False)
+    question = Column(Text, nullable=False)                    # 去重键之一
+    category = Column(String(64), default="unknown")
+    suggested_content = Column(Text, default="")
+    status = Column(String(20), nullable=False, default="pending")  # pending/reviewed/resolved/ignored
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
