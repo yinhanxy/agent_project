@@ -53,7 +53,7 @@ const navItems = computed(() => {
     { label: '知识库', icon: 'orders-o', to: '/knowledge', active: route.path.startsWith('/knowledge'), requiresAuth: true }
   ];
 
-  if (userStore.isAdmin) {
+  if (userStore.isSuperAdmin) {
     items.push({
       label: '账号管理',
       icon: 'manager-o',

@@ -9,7 +9,7 @@
         <van-icon name="orders-o" size="21" />
       </button>
       <button
-        v-if="userStore.isAdmin"
+        v-if="userStore.isSuperAdmin"
         class="rail-button"
         type="button"
         title="账号管理"

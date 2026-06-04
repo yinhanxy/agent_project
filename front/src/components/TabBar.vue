@@ -3,7 +3,7 @@
     <van-tabbar-item to="/aichat" icon="chat-o">{{ $t('nav.aiChat') }}</van-tabbar-item>
     <van-tabbar-item to="/sessions" icon="comment-circle-o">{{ $t('nav.sessions') }}</van-tabbar-item>
     <van-tabbar-item to="/knowledge" icon="orders-o">知识库</van-tabbar-item>
-    <van-tabbar-item v-if="userStore.isAdmin" to="/admin/accounts" icon="manager-o">账号管理</van-tabbar-item>
+    <van-tabbar-item v-if="userStore.isSuperAdmin" to="/admin/accounts" icon="manager-o">账号管理</van-tabbar-item>
     <van-tabbar-item to="/my" icon="user-o">{{ $t('nav.my') }}</van-tabbar-item>
   </van-tabbar>
 </template>
@@ -28,7 +28,7 @@ const setActiveTab = () => {
   } else if (path.includes('/admin/accounts')) {
     active.value = 3
   } else if (path.includes('/my')) {
-    active.value = userStore.isAdmin ? 4 : 3
+    active.value = userStore.isSuperAdmin ? 4 : 3
   }
 }
 
