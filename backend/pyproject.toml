@@ -47,6 +47,7 @@ dependencies = [
     "langchain-milvus~=0.3.3",
     "pymilvus~=2.6.14",
     "langgraph>=1.1.6",
+    "aiosqlite>=0.22.1",
 ]
 
 # 开发依赖
