@@ -496,3 +496,38 @@ async def query_kb(
         citations=citations,
         documents=result.get("documents", []),
     ))
+
+
+@chat_router.get("/knowledge-gaps")
+async def list_knowledge_gaps(
+    status: str = Query(None, description="按状态筛选：pending/reviewed/resolved/ignored"),
+    identity: RequestIdentity = Depends(get_current_identity),
+):
+    """列出知识缺口（管理员看全部，普通用户看自己产生的）"""
+    from app.services.knowledge_gap_service import knowledge_gap_service
+    gaps = await knowledge_gap_service.list_gaps(
+        identity.user_id, is_admin=identity.is_admin, status=status
+    )
+    return success_response(data={"gaps": gaps, "total": len(gaps)})
+
+
+@chat_router.patch("/knowledge-gaps/{gap_id}")
+async def update_knowledge_gap(
+    gap_id: int,
+    body: dict = Body(...),
+    identity: RequestIdentity = Depends(get_current_identity),
+):
+    """修改知识缺口状态（非管理员只能改自己的）"""
+    from app.services.knowledge_gap_service import knowledge_gap_service
+    status = body.get("status")
+    try:
+        ok = await knowledge_gap_service.update_status(
+            gap_id, identity.user_id, is_admin=identity.is_admin, status=status
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not ok:
+        raise HTTPException(status_code=404, detail="知识缺口不存在")
+    return success_response(message="状态已更新")
