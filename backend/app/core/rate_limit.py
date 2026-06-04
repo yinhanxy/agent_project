@@ -5,6 +5,15 @@ from app.core.logger_handler import logger
 from app.utils.auth_utils import decode_django_jwt
 
 
+async def increment_with_window(redis, key: str, window: int) -> int:
+    """原子递增限流计数，并确保计数键始终带过期时间。"""
+    current = await redis.incr(key)
+    ttl = await redis.ttl(key)
+    if current == 1 or ttl < 0:
+        await redis.expire(key, window)
+    return current
+
+
 def rate_limit(limit: int = 1, window: int = 60):
     """
     限流依赖函数
@@ -33,18 +42,10 @@ def rate_limit(limit: int = 1, window: int = 60):
 
         try:
             redis = await connect_redis()
-            current = await redis.get(key)
-            current = int(current) if current else 0
+            current = await increment_with_window(redis, key, window)
 
-            if current >= limit:
+            if current > limit:
                 raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
-
-            if current == 0:
-                # 第一次请求，设置过期时间
-                await redis.setex(key, window, 1)
-            else:
-                # 后续请求，增加计数
-                await redis.incr(key)
         except HTTPException:
             raise  # 限流命中（429），正常抛出
         except Exception as e:
@@ -70,7 +71,7 @@ class RateLimitMiddleware:
         # 构建请求对象
         from fastapi import Request
         request = Request(scope, receive)
-        
+
         # 获取客户端IP
         client_ip = request.client.host
         if not client_ip:
@@ -81,15 +82,8 @@ class RateLimitMiddleware:
 
         try:
             redis = await connect_redis()
-            current = await redis.get(key)
-            current = int(current) if current else 0
-
-            limited = current >= self.limit
-            if not limited:
-                if current == 0:
-                    await redis.setex(key, self.window, 1)
-                else:
-                    await redis.incr(key)
+            current = await increment_with_window(redis, key, self.window)
+            limited = current > self.limit
         except Exception as e:
             # Redis 不可用时降级放行（可用性优先），避免整站 500
             logger.warning(f"[rate_limit] 全局限流 Redis 不可用，放行该请求: {e}")
