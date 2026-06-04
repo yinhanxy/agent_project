@@ -82,6 +82,8 @@
       <van-cell-group inset class="modern-cell-group">
         <van-cell :title="$t('my.notifications')" label="系统通知和服务消息" icon="bell" is-link />
         <van-cell :title="$t('my.settings')" label="主题、语言和隐私设置" icon="setting-o" is-link @click="goToSettings" />
+        <van-cell v-if="isLogin" title="知识缺口" label="查看待补充的知识条目" icon="warning-o" is-link @click="router.push('/knowledge-gaps')" />
+        <van-cell v-if="isLogin && userStore.isAdmin" title="知识缺口管理" label="管理全部用户的知识缺口" icon="records" is-link @click="router.push('/knowledge-gaps')" />
         <van-cell v-if="isLogin" title="切换账号" label="退出当前账号并登录其他账号" icon="exchange" is-link @click="handleSwitchAccount" />
         <van-cell v-if="isLogin" :title="$t('my.logout')" label="退出当前账号" icon="close" @click="handleLogout" />
       </van-cell-group>
