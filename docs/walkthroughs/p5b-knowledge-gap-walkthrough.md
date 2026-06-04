@@ -106,6 +106,31 @@ INSERT INTO knowledge_gaps (user_id, dept_id, title, question, category, suggest
 }
 ```
 
+## 6. 与其他项目并存（8000 被占时，本项目改用 8010）
+
+`vite.config.js` 已支持环境变量覆盖（默认 3000/8000/8001 不变）。当 8000 被你另一个项目占用，让本项目后端跑 8010、前端代理指向 8010 即可并存。把第 1 节启动脚本的**第 3、4 段**替换为下面两段（其余不变）：
+
+```powershell
+# ── 3'. FastAPI 后端改跑 8010 ──
+$b = New-Object System.Diagnostics.ProcessStartInfo
+$b.FileName = "cmd.exe"
+$b.Arguments = "/c set HTTP_PROXY=& set HTTPS_PROXY=& set http_proxy=& set https_proxy=& `"$root\backend\.venv\Scripts\uvicorn.exe`" main:app --host 127.0.0.1 --port 8010 --reload > `"$logRoot\backend\fastapi.log`" 2>&1"
+$b.WorkingDirectory = "$root\backend"; $b.UseShellExecute = $false; $b.CreateNoWindow = $true
+[System.Diagnostics.Process]::Start($b) | Out-Null
+
+# ── 4'. 前端，把 /api 代理指向 8010 ──
+if (-not (Test-Path "$root\front\node_modules")) { npm install --prefix "$root\front" }
+$f = New-Object System.Diagnostics.ProcessStartInfo
+$f.FileName = "cmd.exe"
+$f.Arguments = "/c set API_TARGET=http://127.0.0.1:8010& npm run dev > `"$logRoot\frontend\frontend.log`" 2>&1"
+$f.WorkingDirectory = "$root\front"; $f.UseShellExecute = $false; $f.CreateNoWindow = $true
+[System.Diagnostics.Process]::Start($f) | Out-Null
+```
+
+自检端口把 8000 换成 8010。Django(8001)、前端(3000)若也与另一项目冲突，同理用 `--port`/`FRONT_PORT`/`USER_TARGET` 错开。
+
+> 注意：`set API_TARGET=...&` 里 `&` 紧贴变量值、无空格——它把设置环境变量和 `npm run dev` 连在同一 cmd 里执行。
+
 ## 附：端到端缺口触发（可选，验证真实链路而非只看 UI）
 
 若想验证「聊天问一个超纲问题 → 系统自动记一条缺口」，需额外：
