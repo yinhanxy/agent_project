@@ -15,8 +15,17 @@ from app.utils.factory import chat_model
 from app.utils.prompt_loader import load_prompt
 from app.core.logger_handler import logger
 
-# 置信度阈值：reranker 原始 logit 分低于此值视为"无相关信息"
+# 置信度阈值：普通 RAG 聊天（get_documents_and_summary）拒答用。
+# 注意单位：本地 CrossEncoder 输出 logit（默认 -5.0 即为此设计）；阿里云 reranker 输出
+# 0~1 的 relevance_score，此时 -5.0 永不命中、等于关闭拒答。两种 reranker 需配不同的值。
 _CONFIDENCE_THRESHOLD = float(os.getenv("RAG_CONFIDENCE_THRESHOLD", "-5.0"))
+
+# 知识缺口阈值：Agent 路径（get_documents_for_agent）专用，与上面的拒答阈值解耦。
+# 语义按阿里云 0~1 的 relevance_score：最高分低于此值视为"知识库无明确依据"，
+# 由 LangGraph 路由走 knowledge_gap 记录缺口。定标依据（全库样本）：
+#   正常命中 0.816~0.932 / 相关越界 0.507~0.705 / 完全无关 0.413~0.472，
+#   取空档 0.705~0.816 内的 0.75，正常命中留约 0.066 裕量。
+_GAP_THRESHOLD = float(os.getenv("RAG_GAP_THRESHOLD", "0.75"))
 
 
 class RetrievalError(RuntimeError):
@@ -239,19 +248,14 @@ class RagService:
                 }
 
             max_score = max(d["similarity"] for d in scored_docs)
-            if max_score < _CONFIDENCE_THRESHOLD:
-                logger.info(f"【RAG】最高置信度 {max_score:.4f} 低于阈值 {_CONFIDENCE_THRESHOLD}，拒绝回答")
-                logger.info(
-                    f"[Timing][RAG] stage=agent_context_total status=low_confidence "
-                    f"max_score={max_score:.4f} duration={time.perf_counter() - total_t0:.3f}s"
-                )
-                return {
-                    "documents": [],
-                    "summary": "抱歉，未在知识库中找到与您问题相关的信息，请尝试换个提问方式或上传相关文档。",
-                    "citations": [],
-                    "error": None,
-                }
+            is_enough = max_score >= _GAP_THRESHOLD
+            logger.info(
+                f"【RAG诊断】max_score={max_score:.4f} 缺口阈值={_GAP_THRESHOLD} "
+                f"is_enough={is_enough} doc数={len(scored_docs)}"
+            )
 
+            # 低于缺口阈值时不清空 documents：documents=检索到的内容，is_enough=相关度是否达标，
+            # 二者解耦。是否记录缺口由 LangGraph 的 route_after_knowledge 依据 is_enough 决定。
             max_documents = 3
             top_scored = scored_docs[:max_documents]
             citations: List[Dict] = []
@@ -273,13 +277,16 @@ class RagService:
             )
 
             logger.info(
-                f"[Timing][RAG] stage=agent_context_total status=ok "
-                f"doc_count={len(top_scored)} duration={time.perf_counter() - total_t0:.3f}s"
+                f"[Timing][RAG] stage=agent_context_total status={'ok' if is_enough else 'gap'} "
+                f"max_score={max_score:.4f} doc_count={len(top_scored)} "
+                f"duration={time.perf_counter() - total_t0:.3f}s"
             )
             return {
                 "documents": [d["document"] for d in top_scored],
                 "summary": "",
                 "citations": citations,
+                "max_score": max_score,
+                "is_enough": is_enough,
                 "error": None,
             }
 
@@ -364,6 +371,7 @@ class RagService:
 
             # 置信度过滤
             max_score = max(d["similarity"] for d in scored_docs)
+            logger.info(f"【RAG诊断】max_score={max_score:.4f} 拒答阈值={_CONFIDENCE_THRESHOLD} doc数={len(scored_docs)}")
             if max_score < _CONFIDENCE_THRESHOLD:
                 logger.info(f"【RAG】最高置信度 {max_score:.4f} 低于阈值 {_CONFIDENCE_THRESHOLD}，拒绝回答")
                 logger.info(

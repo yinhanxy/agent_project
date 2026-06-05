@@ -27,7 +27,9 @@ async def knowledge_node(state: AgentState) -> dict:
 
     documents = result.get("documents", [])
     citations = result.get("citations", [])
-    is_enough = bool(documents)
+    # is_enough 由 rag_service 按缺口阈值（相关度）判定；缺字段时回退为"有无文档"，兼容旧返回/桩
+    is_enough = result.get("is_enough", bool(documents))
+    max_score = result.get("max_score")
 
     writer({"kind": "step", "id": "tool_rag_summary_tools", "status": "done",
             "level": "success", "detail": f"已检索 {len(citations)} 个文档",
@@ -38,5 +40,5 @@ async def knowledge_node(state: AgentState) -> dict:
         "citations": citations,
         "is_enough": is_enough,
         "trace": [{"agent": "knowledge", "status": "done",
-                   "output": f"documents={len(documents)} is_enough={is_enough}"}],
+                   "output": f"documents={len(documents)} is_enough={is_enough} max_score={max_score}"}],
     }
