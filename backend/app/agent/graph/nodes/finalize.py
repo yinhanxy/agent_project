@@ -1,9 +1,10 @@
 from app.agent.graph._stream import safe_get_stream_writer
 from app.agent.graph.state import AgentState
-from app.utils.factory import chat_model
+from app.utils.factory import chat_model, get_chat_model
 from app.utils.prompt_loader import load_prompt
 
 _SYSTEM_PROMPT = load_prompt("main_prompt")
+_DEFAULT_CHAT_MODEL = chat_model
 
 
 def _build_messages(state: AgentState) -> list:
@@ -36,7 +37,8 @@ async def finalize_node(state: AgentState) -> dict:
 
     messages = state.get("task_messages") or _build_messages(state)
     try:
-        msg = await chat_model.ainvoke(messages)
+        model = chat_model if chat_model is not _DEFAULT_CHAT_MODEL else get_chat_model("finalize")
+        msg = await model.ainvoke(messages)
         answer = msg.content if hasattr(msg, "content") else str(msg)
         status = "done"
         from app.agent.token_utils import extract_total_tokens

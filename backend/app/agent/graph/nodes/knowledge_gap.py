@@ -5,7 +5,9 @@ from app.agent.graph._stream import safe_get_stream_writer
 from app.agent.graph.state import AgentState
 from app.services.knowledge_gap_service import knowledge_gap_service
 from app.core.logger_handler import logger
-from app.utils.factory import chat_model
+from app.utils.factory import chat_model, get_chat_model
+
+_DEFAULT_CHAT_MODEL = chat_model
 
 _GAP_PROMPT = """用户的问题在企业知识库中找不到明确依据。请基于这个问题，生成一条"待补充知识条目"，
 只输出一个 JSON 对象，不要额外解释，格式：
@@ -59,7 +61,8 @@ async def knowledge_gap_node(state: AgentState) -> dict:
     writer({"kind": "step", "id": "task_execute", "status": "running",
             "level": "info", "detail": "正在记录知识缺口", "title": "记录知识缺口"})
 
-    msg = await chat_model.ainvoke(
+    model = chat_model if chat_model is not _DEFAULT_CHAT_MODEL else get_chat_model("knowledge_gap")
+    msg = await model.ainvoke(
         [{"role": "system", "content": _GAP_PROMPT},
          {"role": "user", "content": query}]
     )

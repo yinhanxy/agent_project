@@ -3,7 +3,9 @@ import re
 
 from app.agent.graph._stream import safe_get_stream_writer
 from app.agent.graph.state import AgentState
-from app.utils.factory import chat_model
+from app.utils.factory import chat_model, get_chat_model
+
+_DEFAULT_CHAT_MODEL = chat_model
 
 # 合法任务类型（与设计文档一致）；非法值归一为 unknown
 _TASK_TYPES = {
@@ -70,7 +72,8 @@ async def coordinator_node(state: AgentState) -> dict:
         {"role": "user", "content": f"{context}当前问题：{state['query']}"},
     ]
     try:
-        msg = await chat_model.ainvoke(messages)
+        model = chat_model if chat_model is not _DEFAULT_CHAT_MODEL else get_chat_model("coordinator")
+        msg = await model.ainvoke(messages)
         text = msg.content if hasattr(msg, "content") else str(msg)
         plan = _parse_plan(text)
         plan_status = "done"

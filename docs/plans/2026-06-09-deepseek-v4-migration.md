@@ -255,6 +255,8 @@ git commit -m "feat(model): 接入 DeepSeek V4 并按角色分配模型（coordi
 3. **finalize token 流中没有思考内容泄漏**（关思考生效）。
 验证后删除临时脚本，记录结论。
 
+**实测结论（2026-06-09）：** 使用 `LLM_TYPE=DEEPSEEK` 运行 `GraphRunner.stream`，历史为「我叫小李...」，当前问题为「那我叫什么？请简短回答。」；输出为「你叫小李。」，多轮指代生效；`done.tokens=850`，来自图内 coordinator/finalize 节点的精确 `usage_metadata.total_tokens` 累计；finalize token 流未出现 `reasoning_content` 或思考文本泄漏。
+
 ---
 
 ## Phase 2：结构化输出（原 #4-1，依赖 Phase 0/1 通过）

@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from functools import lru_cache
 from typing import Optional, List
 import os
 from dotenv import load_dotenv
@@ -12,6 +13,12 @@ from app.core.logger_handler import logger
 
 # 加载环境变量
 load_dotenv()
+
+_DEEPSEEK_ROLE_ENV = {
+    "coordinator": ("DEEPSEEK_MODEL_COORDINATOR", "deepseek-v4-flash"),
+    "knowledge_gap": ("DEEPSEEK_MODEL_COORDINATOR", "deepseek-v4-flash"),
+    "finalize": ("DEEPSEEK_MODEL_FINALIZE", "deepseek-v4-pro"),
+}
 
 
 class DashScopeEmbeddingsWrapper(Embeddings):
@@ -67,8 +74,24 @@ class BaseModelFactory(ABC):
         pass
 
 
+def _build_deepseek_chat_model(role: str) -> BaseChatModel:
+    from langchain_deepseek import ChatDeepSeek
+
+    env_key, default_model = _DEEPSEEK_ROLE_ENV.get(role, _DEEPSEEK_ROLE_ENV["finalize"])
+    model_name = os.getenv(env_key, default_model)
+    logger.info(f"📦 ChatModel 使用DeepSeek模型: role={role}, model={model_name}")
+    return ChatDeepSeek(
+        model=model_name,
+        api_key=os.getenv("DEEPSEEK_API_KEY"),
+        base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+        streaming=True,
+        top_p=0.7,
+        extra_body={"thinking": {"type": "disabled"}},
+    )
+
+
 class ChatModelFactory(BaseModelFactory):
-    """聊天模型工厂 - 支持阿里云百炼和Ollama"""
+    """聊天模型工厂 - 支持阿里云百炼、Ollama 和 DeepSeek"""
     
     def generator(self) -> Optional[Embeddings | BaseChatModel]:
         """根据LLM_TYPE生成对应的聊天模型"""
@@ -101,9 +124,12 @@ class ChatModelFactory(BaseModelFactory):
                 streaming=True,
                 top_p=0.7,
             )
+
+        elif llm_type == "DEEPSEEK":
+            return _build_deepseek_chat_model("finalize")
         
         else:
-            raise ValueError(f"不支持的LLM_TYPE: {llm_type}，可选值: ALIYUN, OLLAMA")
+            raise ValueError(f"不支持的LLM_TYPE: {llm_type}，可选值: ALIYUN, OLLAMA, DEEPSEEK")
 
 
 class EmbedModelFactory(BaseModelFactory):
@@ -148,3 +174,13 @@ class RerankerModelFactory(BaseModelFactory):
 chat_model = ChatModelFactory().generator()
 embed_model = EmbedModelFactory().generator()
 reranker_model = None
+
+
+@lru_cache(maxsize=None)
+def get_chat_model(role: str = "finalize") -> BaseChatModel:
+    """按节点角色取 chat 模型；非 DeepSeek 保持原有单模型行为。"""
+    llm_type = os.getenv("LLM_TYPE", "ALIYUN").upper()
+    if llm_type != "DEEPSEEK":
+        return chat_model
+    normalized_role = role if role in _DEEPSEEK_ROLE_ENV else "finalize"
+    return _build_deepseek_chat_model(normalized_role)
