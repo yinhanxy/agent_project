@@ -30,9 +30,6 @@ async def test_graph_skips_retrieval_when_no_retrieval(monkeypatch):
         def __init__(self, c):
             self.content = c
 
-    async def _fake_coord_invoke(_messages):
-        return _Msg('{"task_type": "knowledge_qa", "need_retrieval": false, "reason": "闲聊"}')
-
     async def _fake_final_invoke(_messages):
         return _Msg("你好，我能帮你查询企业知识。")
 
@@ -43,7 +40,19 @@ async def test_graph_skips_retrieval_when_no_retrieval(monkeypatch):
         return {"documents": [], "citations": [], "summary": "", "error": None}
 
     class _FakeCoordModel:
-        ainvoke = staticmethod(_fake_coord_invoke)
+        def with_structured_output(self, schema, include_raw=False):
+            class _Structured:
+                async def ainvoke(self, _messages):
+                    return {
+                        "raw": _Msg(""),
+                        "parsed": schema(
+                            task_type="knowledge_qa",
+                            need_retrieval=False,
+                            reason="闲聊",
+                        ),
+                        "parsing_error": None,
+                    }
+            return _Structured()
 
     class _FakeFinalModel:
         ainvoke = staticmethod(_fake_final_invoke)

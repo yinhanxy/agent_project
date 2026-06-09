@@ -1,73 +1,90 @@
 import pytest
 
-from app.agent.graph.nodes.coordinator import coordinator_node, _parse_plan
+from app.agent.graph.nodes.coordinator import (
+    CoordinatorPlan,
+    coordinator_node,
+    _plan_to_dict,
+)
 
 
-def test_parse_plan_plain_json():
-    text = '{"task_type": "document_compare", "need_retrieval": true, "reason": "对比新旧制度"}'
-    plan = _parse_plan(text)
+def test_plan_to_dict_accepts_structured_output():
+    plan = _plan_to_dict(CoordinatorPlan(
+        task_type="document_compare",
+        need_retrieval=True,
+        reason="对比新旧制度",
+    ))
     assert plan["task_type"] == "document_compare"
     assert plan["need_retrieval"] is True
     assert plan["reason"] == "对比新旧制度"
 
 
-def test_parse_plan_with_code_fence_and_extra_text():
-    text = '好的，分析如下：\n```json\n{"task_type": "knowledge_qa", "need_retrieval": true, "reason": "普通问答"}\n```\n以上。'
-    plan = _parse_plan(text)
-    assert plan["task_type"] == "knowledge_qa"
-    assert plan["need_retrieval"] is True
-
-
-def test_parse_plan_unknown_task_type_falls_back():
-    text = '{"task_type": "啥也不是", "need_retrieval": false, "reason": "x"}'
-    plan = _parse_plan(text)
+def test_plan_to_dict_unknown_task_type_is_supported():
+    plan = _plan_to_dict(CoordinatorPlan(
+        task_type="unknown",
+        need_retrieval=False,
+        reason="x",
+    ))
     assert plan["task_type"] == "unknown"
     assert plan["need_retrieval"] is False
 
 
-def test_parse_plan_garbage_falls_back_to_retrieval():
-    plan = _parse_plan("这不是 JSON")
-    assert plan["task_type"] == "knowledge_qa"
-    assert plan["need_retrieval"] is True
-
-
 class _FakeMsg:
-    def __init__(self, content):
-        self.content = content
+    usage_metadata = {"total_tokens": 123}
+
+
+class _FakeStructuredModel:
+    def __init__(self, result, captured):
+        self.result = result
+        self.captured = captured
+
+    async def ainvoke(self, messages):
+        self.captured["messages"] = messages
+        return {"raw": _FakeMsg(), "parsed": self.result, "parsing_error": None}
+
+
+class _FakeChatModel:
+    def __init__(self, result, captured):
+        self.result = result
+        self.captured = captured
+
+    def with_structured_output(self, schema, include_raw=False):
+        self.captured["schema"] = schema
+        self.captured["include_raw"] = include_raw
+        return _FakeStructuredModel(self.result, self.captured)
 
 
 @pytest.mark.asyncio
 async def test_coordinator_node_writes_plan(monkeypatch):
-    async def _fake_ainvoke(_messages):
-        return _FakeMsg('{"task_type": "report_generation", "need_retrieval": true, "reason": "要生成报告"}')
+    captured = {}
+    result = CoordinatorPlan(
+        task_type="report_generation",
+        need_retrieval=True,
+        reason="要生成报告",
+    )
 
     import app.agent.graph.nodes.coordinator as co
-
-    class _FakeChatModel:
-        ainvoke = staticmethod(_fake_ainvoke)
-
-    monkeypatch.setattr(co, "chat_model", _FakeChatModel())
+    monkeypatch.setattr(co, "chat_model", _FakeChatModel(result, captured))
 
     update = await coordinator_node({"query": "根据售后政策生成报告"})
+    assert captured["schema"] is CoordinatorPlan
+    assert captured["include_raw"] is True
     assert update["plan"]["task_type"] == "report_generation"
     assert update["plan"]["need_retrieval"] is True
+    assert update["token_usage"] == 123
     assert update["trace"][0]["agent"] == "coordinator"
 
 
 @pytest.mark.asyncio
 async def test_coordinator_uses_recent_history(monkeypatch):
     captured = {}
-
-    async def _fake_ainvoke(messages):
-        captured["messages"] = messages
-        return _FakeMsg('{"task_type":"knowledge_qa","need_retrieval":true,"reason":"x"}')
+    result = CoordinatorPlan(
+        task_type="knowledge_qa",
+        need_retrieval=True,
+        reason="x",
+    )
 
     import app.agent.graph.nodes.coordinator as co
-
-    class _FakeChatModel:
-        ainvoke = staticmethod(_fake_ainvoke)
-
-    monkeypatch.setattr(co, "chat_model", _FakeChatModel())
+    monkeypatch.setattr(co, "chat_model", _FakeChatModel(result, captured))
 
     state = {
         "query": "那它呢",

@@ -277,6 +277,8 @@ git commit -m "feat(model): 接入 DeepSeek V4 并按角色分配模型（coordi
 
 > ⚠️ `with_structured_output` 与 `extra_body` thinking 的兼容性以 spike/实测为准；结构化输出本就不需要思考，确保该路径 `thinking=disabled`。
 
+**实测结论（2026-06-09，langchain-deepseek 1.0.1）：** `deepseek-v4-flash` + `thinking=disabled` + `top_p=0.7` 调用 `with_structured_output(PydanticSchema, include_raw=True)` 成功；返回包含 `raw`、`parsed`、`parsing_error`，`parsed` 为 Pydantic 对象，`raw.usage_metadata.total_tokens` 有值，`raw.additional_kwargs` 无 `reasoning_content`。
+
 - [ ] **Step 3: 全量回归 + 行尾核查 + Commit**
 
 ```bash

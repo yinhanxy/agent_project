@@ -1,5 +1,7 @@
 import json
-import re
+from typing import Literal
+
+from pydantic import BaseModel
 
 from app.agent.graph._stream import safe_get_stream_writer
 from app.agent.graph.state import AgentState
@@ -33,18 +35,18 @@ _FALLBACK_PLAN = {"task_type": "knowledge_qa", "need_retrieval": True,
                   "reason": "分类失败，默认走检索"}
 
 
-def _parse_plan(text: str) -> dict:
-    """从 LLM 输出中提取 JSON plan，健壮处理代码块/多余文字/非法值。"""
-    if not text:
-        return dict(_FALLBACK_PLAN)
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if not match:
-        return dict(_FALLBACK_PLAN)
-    try:
-        data = json.loads(match.group(0))
-    except (json.JSONDecodeError, ValueError):
-        return dict(_FALLBACK_PLAN)
+class CoordinatorPlan(BaseModel):
+    task_type: Literal[
+        "knowledge_qa", "document_compare", "document_generation",
+        "report_generation", "knowledge_gap", "unknown",
+    ]
+    need_retrieval: bool
+    reason: str
 
+
+def _plan_to_dict(plan_obj: CoordinatorPlan | dict) -> dict:
+    """把结构化输出对象归一为图状态中的 plan 字典。"""
+    data = plan_obj.model_dump() if hasattr(plan_obj, "model_dump") else dict(plan_obj)
     task_type = data.get("task_type")
     if task_type not in _TASK_TYPES:
         task_type = "unknown"
@@ -73,13 +75,16 @@ async def coordinator_node(state: AgentState) -> dict:
     ]
     try:
         model = chat_model if chat_model is not _DEFAULT_CHAT_MODEL else get_chat_model("coordinator")
-        msg = await model.ainvoke(messages)
-        text = msg.content if hasattr(msg, "content") else str(msg)
-        plan = _parse_plan(text)
+        structured = model.with_structured_output(CoordinatorPlan, include_raw=True)
+        result = await structured.ainvoke(messages)
+        if result.get("parsing_error"):
+            raise result["parsing_error"]
+        msg = result.get("raw")
+        plan = _plan_to_dict(result["parsed"])
         plan_status = "done"
         from app.agent.token_utils import extract_total_tokens, estimate_messages_tokens
         coord_tokens = extract_total_tokens(msg) or (
-            estimate_messages_tokens(messages) + estimate_messages_tokens([{"content": text}])
+            estimate_messages_tokens(messages) + estimate_messages_tokens([{"content": json.dumps(plan)}])
         )
     except Exception as e:
         from app.core.logger_handler import logger

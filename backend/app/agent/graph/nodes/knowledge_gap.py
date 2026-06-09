@@ -1,5 +1,4 @@
-import json
-import re
+from pydantic import BaseModel
 
 from app.agent.graph._stream import safe_get_stream_writer
 from app.agent.graph.state import AgentState
@@ -14,6 +13,12 @@ _GAP_PROMPT = """用户的问题在企业知识库中找不到明确依据。请
 {"title": "<简短标题>", "category": "<问题类型，如 财务报销/远程办公/人事>", "suggested_content": "<建议补充的内容，列出若干要点>"}"""
 
 
+class KnowledgeGapDraft(BaseModel):
+    title: str
+    category: str
+    suggested_content: str
+
+
 def _fallback_gap(fallback_question: str) -> dict:
     title = fallback_question[:50] if fallback_question else "未命名缺口"
     return {
@@ -23,16 +28,8 @@ def _fallback_gap(fallback_question: str) -> dict:
     }
 
 
-def _parse_gap(text: str, fallback_question: str) -> dict:
-    if not text:
-        return _fallback_gap(fallback_question)
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if not match:
-        return _fallback_gap(fallback_question)
-    try:
-        data = json.loads(match.group(0))
-    except (json.JSONDecodeError, ValueError):
-        return _fallback_gap(fallback_question)
+def _gap_to_dict(gap_obj: KnowledgeGapDraft | dict, fallback_question: str) -> dict:
+    data = gap_obj.model_dump() if hasattr(gap_obj, "model_dump") else dict(gap_obj)
     fb = _fallback_gap(fallback_question)
     return {
         "title": str(data.get("title") or fb["title"]),
@@ -61,15 +58,21 @@ async def knowledge_gap_node(state: AgentState) -> dict:
     writer({"kind": "step", "id": "task_execute", "status": "running",
             "level": "info", "detail": "正在记录知识缺口", "title": "记录知识缺口"})
 
-    model = chat_model if chat_model is not _DEFAULT_CHAT_MODEL else get_chat_model("knowledge_gap")
-    msg = await model.ainvoke(
-        [{"role": "system", "content": _GAP_PROMPT},
-         {"role": "user", "content": query}]
-    )
-    text = msg.content if hasattr(msg, "content") else str(msg)
-    gap = _parse_gap(text, fallback_question=query)
-    from app.agent.token_utils import extract_total_tokens, estimate_text_tokens
-    gap_tokens = extract_total_tokens(msg) or estimate_text_tokens(text)
+    try:
+        model = chat_model if chat_model is not _DEFAULT_CHAT_MODEL else get_chat_model("knowledge_gap")
+        messages = [{"role": "system", "content": _GAP_PROMPT}, {"role": "user", "content": query}]
+        structured = model.with_structured_output(KnowledgeGapDraft, include_raw=True)
+        result = await structured.ainvoke(messages)
+        if result.get("parsing_error"):
+            raise result["parsing_error"]
+        msg = result.get("raw")
+        gap = _gap_to_dict(result["parsed"], fallback_question=query)
+        from app.agent.token_utils import extract_total_tokens, estimate_text_tokens
+        gap_tokens = extract_total_tokens(msg) or estimate_text_tokens(str(gap))
+    except Exception as e:
+        logger.error(f"[KnowledgeGap] 结构化缺口生成失败，使用兜底缺口: {e}", exc_info=True)
+        gap = _fallback_gap(query)
+        gap_tokens = 0
 
     identity = state.get("identity")
     user_id = (identity.user_id if identity else "") or ""

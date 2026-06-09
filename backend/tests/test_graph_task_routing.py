@@ -30,9 +30,6 @@ async def test_graph_routes_compare_through_task_node(monkeypatch):
         def __init__(self, c):
             self.content = c
 
-    async def _fake_coord(_m):
-        return _Msg('{"task_type": "document_compare", "need_retrieval": true, "reason": "对比"}')
-
     async def _fake_get_docs(query, filter_meta=None):
         return {"documents": ["旧版500", "新版600"], "citations": [], "summary": "", "error": None}
 
@@ -43,7 +40,19 @@ async def test_graph_routes_compare_through_task_node(monkeypatch):
         return _Msg("| 对比项 | 旧 | 新 |")
 
     class _Coord:
-        ainvoke = staticmethod(_fake_coord)
+        def with_structured_output(self, schema, include_raw=False):
+            class _Structured:
+                async def ainvoke(self, _messages):
+                    return {
+                        "raw": _Msg(""),
+                        "parsed": schema(
+                            task_type="document_compare",
+                            need_retrieval=True,
+                            reason="对比",
+                        ),
+                        "parsing_error": None,
+                    }
+            return _Structured()
 
     class _Final:
         ainvoke = staticmethod(_fake_final)
