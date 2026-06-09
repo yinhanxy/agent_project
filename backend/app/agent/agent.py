@@ -443,7 +443,7 @@ async def get_agent_stream_response(
 
     engine = os.getenv("AGENT_ENGINE", "loop").strip().lower()
     if engine == "graph":
-        event_source = graph_runner.stream(query, history, identity=identity)
+        event_source = graph_runner.stream(query, history, identity=identity, session_id=session_id)
     else:
         event_source = agent_loop.stream(query, history, identity=identity)
 

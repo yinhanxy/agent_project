@@ -127,3 +127,48 @@ async def test_graph_runner_uses_accurate_usage_metadata_when_available(monkeypa
     done = events[-1]
     assert done["type"] == "done"
     assert done["tokens"] == 123  # 精确值，不被估算覆盖
+
+
+@pytest.mark.asyncio
+async def test_graph_runner_persists_trace_and_done_steps(monkeypatch):
+    """传 session_id 时：trace 经 agent_trace_service 落库，done.steps 为 trace 摘要。"""
+    runner = GraphRunner()
+
+    class _Chunk:
+        def __init__(self, c):
+            self.content = c
+
+    async def _astream(state, stream_mode=None):
+        yield ("messages", (_Chunk("答"), {"langgraph_node": "finalize"}))
+        yield ("values", {
+            "final_answer": "答",
+            "trace": [
+                {"agent": "coordinator", "status": "done", "output": "{}"},
+                {"agent": "finalize", "status": "done", "output": "答"},
+            ],
+        })
+
+    class _FakeGraph:
+        def astream(self, state, stream_mode=None):
+            return _astream(state, stream_mode=stream_mode)
+
+    monkeypatch.setattr(runner, "_graph", _FakeGraph())
+
+    saved = {}
+
+    async def _fake_save(session_id, trace):
+        saved["session_id"] = session_id
+        saved["trace"] = trace
+
+    from app.services.agent_trace_service import agent_trace_service
+    monkeypatch.setattr(agent_trace_service, "save_traces", _fake_save)
+
+    events = [e async for e in runner.stream("q", history=[], identity=None, session_id="sid-1")]
+    done = events[-1]
+    assert done["type"] == "done"
+    assert done["steps"] == [
+        {"agent": "coordinator", "status": "done"},
+        {"agent": "finalize", "status": "done"},
+    ]
+    assert saved["session_id"] == "sid-1"
+    assert len(saved["trace"]) == 2

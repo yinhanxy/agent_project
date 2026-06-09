@@ -29,7 +29,8 @@ class GraphRunner:
         self._graph = build_graph()
 
     async def stream(
-        self, query: str, history: list = None, identity: Optional[RequestIdentity] = None
+        self, query: str, history: list = None,
+        identity: Optional[RequestIdentity] = None, session_id: Optional[str] = None,
     ) -> AsyncGenerator[dict, None]:
         yield {"type": "agent_plan", "data": _initial_plan()}
 
@@ -57,6 +58,7 @@ class GraphRunner:
         final_citations: list = []
         final_answer_state = ""
         graph_token_usage = 0
+        final_trace: list = []
         async for item in self._graph.astream(
             state, stream_mode=["messages", "custom", "values"]
         ):
@@ -69,6 +71,8 @@ class GraphRunner:
                         final_answer_state = payload["final_answer"]
                     if payload.get("token_usage") is not None:
                         graph_token_usage = payload["token_usage"]
+                    if payload.get("trace") is not None:
+                        final_trace = payload["trace"]
                 continue
 
             # 在 messages 模式下尽量从 chunk 读精确 usage（最后一帧通常带）
@@ -105,13 +109,22 @@ class GraphRunner:
             "data": {"id": "answer_generated", "status": "done",
                      "level": "success", "detail": "已生成最终回答", "title": "生成最终回答"},
         }
+        # trace 落库（事后复盘）+ 出口给 done.steps（此前写死为空）
+        if session_id and final_trace:
+            from app.services.agent_trace_service import agent_trace_service
+            await agent_trace_service.save_traces(session_id, final_trace)
+        trace_steps = [
+            {"agent": t.get("agent"), "status": t.get("status")}
+            for t in final_trace
+        ]
+
         # done 帧 token 口径：优先用图内各节点累计的精确 total（含 coordinator/gap/finalize）；
         # 为 0 时回落到 accurate_tokens（finalize chunk 精确值）或 prompt+finalize 输出的估算
         estimated_total = prompt_est + estimate_text_tokens(content_buf)
         final_tokens = graph_token_usage if graph_token_usage else (
             accurate_tokens if accurate_tokens is not None else estimated_total
         )
-        yield {"type": "done", "steps": [], "tokens": final_tokens, "citations": final_citations}
+        yield {"type": "done", "steps": trace_steps, "tokens": final_tokens, "citations": final_citations}
 
 
 # 全局单例（图编译一次复用）
