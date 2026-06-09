@@ -137,3 +137,16 @@ class KnowledgeGap(Base):
     status = Column(String(20), nullable=False, default="pending")  # pending/reviewed/resolved/ignored
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class AgentTrace(Base):
+    """多 agent 协同轨迹：每个节点一行，供事后复盘。实时展示仍走 SSE，不依赖查库。"""
+    __tablename__ = "agent_traces"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String(64), index=True, nullable=False)
+    agent_name = Column(String(64), nullable=False)
+    output = Column(Text, default="")
+    status = Column(String(20), nullable=False, default="done")  # done/failed/skipped
+    seq = Column(Integer, default=0)   # 同 session 内顺序
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
