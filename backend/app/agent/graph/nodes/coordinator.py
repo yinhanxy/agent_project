@@ -59,9 +59,15 @@ async def coordinator_node(state: AgentState) -> dict:
     writer({"kind": "step", "id": "task_understood", "status": "running",
             "level": "info", "detail": "正在识别任务类型", "title": "识别任务类型"})
 
+    # 仅取最近一轮做指代消解（"那它呢"），避免长历史干扰分类的 JSON 输出
+    context = ""
+    history = state.get("history") or []
+    if history and isinstance(history[-1], (list, tuple)) and len(history[-1]) == 2:
+        last_u, last_a = history[-1]
+        context = f"（上一轮——用户：{last_u}；助手：{last_a}）\n"
     messages = [
         {"role": "system", "content": _COORDINATOR_PROMPT},
-        {"role": "user", "content": state["query"]},
+        {"role": "user", "content": f"{context}当前问题：{state['query']}"},
     ]
     msg = await chat_model.ainvoke(messages)
     text = msg.content if hasattr(msg, "content") else str(msg)

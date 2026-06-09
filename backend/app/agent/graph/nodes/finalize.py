@@ -17,10 +17,15 @@ def _build_messages(state: AgentState) -> list:
         )
     else:
         user = state["query"]
-    return [
-        {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content": user},
-    ]
+
+    messages = [{"role": "system", "content": _SYSTEM_PROMPT}]
+    for pair in state.get("history") or []:
+        if isinstance(pair, (list, tuple)) and len(pair) == 2:
+            u, a = pair
+            messages.append({"role": "user", "content": u or ""})
+            messages.append({"role": "assistant", "content": a or ""})
+    messages.append({"role": "user", "content": user})
+    return messages
 
 
 async def finalize_node(state: AgentState) -> dict:

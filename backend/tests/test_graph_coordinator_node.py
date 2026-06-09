@@ -52,3 +52,27 @@ async def test_coordinator_node_writes_plan(monkeypatch):
     assert update["plan"]["task_type"] == "report_generation"
     assert update["plan"]["need_retrieval"] is True
     assert update["trace"][0]["agent"] == "coordinator"
+
+
+@pytest.mark.asyncio
+async def test_coordinator_uses_recent_history(monkeypatch):
+    captured = {}
+
+    async def _fake_ainvoke(messages):
+        captured["messages"] = messages
+        return _FakeMsg('{"task_type":"knowledge_qa","need_retrieval":true,"reason":"x"}')
+
+    import app.agent.graph.nodes.coordinator as co
+
+    class _FakeChatModel:
+        ainvoke = staticmethod(_fake_ainvoke)
+
+    monkeypatch.setattr(co, "chat_model", _FakeChatModel())
+
+    state = {
+        "query": "那它呢",
+        "history": [("差旅报销上限", "上限500元")],
+    }
+    await coordinator_node(state)
+    user_content = captured["messages"][-1]["content"]
+    assert "差旅报销上限" in user_content and "那它呢" in user_content

@@ -51,3 +51,33 @@ async def test_finalize_prefers_task_messages(monkeypatch):
 
     assert captured["messages"] == task_msgs
     assert update["final_answer"] == "对比表内容"
+
+
+@pytest.mark.asyncio
+async def test_finalize_includes_history(monkeypatch):
+    captured = {}
+
+    async def _fake_ainvoke(messages):
+        captured["messages"] = messages
+        return _FakeMsg("基于上下文的回答")
+
+    import app.agent.graph.nodes.finalize as fz
+
+    class _FakeChatModel:
+        ainvoke = staticmethod(_fake_ainvoke)
+
+    monkeypatch.setattr(fz, "chat_model", _FakeChatModel())
+
+    state = {
+        "query": "那它2025版改了什么",
+        "documents": [],
+        "history": [("2023版报销上限多少", "上限是500元")],
+    }
+    await finalize_node(state)
+
+    roles = [m["role"] for m in captured["messages"]]
+    # system + 历史(user,assistant) + 当前 user
+    assert roles == ["system", "user", "assistant", "user"]
+    assert captured["messages"][1]["content"] == "2023版报销上限多少"
+    assert captured["messages"][2]["content"] == "上限是500元"
+    assert "那它2025版改了什么" in captured["messages"][-1]["content"]
