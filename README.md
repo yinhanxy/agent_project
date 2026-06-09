@@ -4,6 +4,8 @@
 
 当前项目更像一个完整的“知识库 + AI 问答”应用，而不是单纯的 LangChain demo：用户可以登录后创建或访问知识库，上传文档，在 AI 问答页基于个人或共享知识进行追问，并在会话页管理历史对话。
 
+后端 Agent 默认走传统 loop 引擎；通过 `AGENT_ENGINE=graph` 可切换到 **LangGraph 多节点图引擎**：Coordinator 自动识别任务类型 → Knowledge 检索 → 在 Task（对比 / 报告 / 申请）和 KnowledgeGap（知识缺口记录）之间分流 → Finalize 输出，所有步骤都会以"识别任务类型 / 生成对比 / 记录知识缺口"等提示流式回传给前端。
+
 ## 目录
 
 - [核心能力](#核心能力)
@@ -17,6 +19,7 @@
 - [页面入口](#页面入口)
 - [API 速览](#api-速览)
 - [RAG 与知识库机制](#rag-与知识库机制)
+- [LangGraph Agent 引擎](#langgraph-agent-引擎)
 - [测试与构建](#测试与构建)
 - [常见问题](#常见问题)
 - [相关文档](#相关文档)
@@ -24,6 +27,9 @@
 ## 核心能力
 
 - AI 问答：支持普通 RAG 查询和 Agent 流式问答，回答可携带来源引用。
+- LangGraph Agent 引擎（可选）：Coordinator → Knowledge → Task / KnowledgeGap → Finalize 的多节点图，每个节点的执行步骤会作为 SSE 事件实时推送到前端。
+- 任务执行：识别到「文档对比 / 报告生成 / 申请文本生成」时，调用对应 prompt 工具产出结构化结果，区别于纯问答。
+- 知识缺口记录：检索 0 命中或置信极低时，LLM 抽取"未覆盖的知识点"自动落库，管理员可在「我的 → 知识缺口」页查看并改状态。
 - 会话管理：FastAPI 侧将会话和消息持久化到 MySQL，前端提供会话列表、切换和删除。
 - 知识库管理：支持个人、部门、公司范围的知识库，并提供成员权限模型。
 - 文档管理：支持 `txt`、`pdf`、`md`、`docx`、`pptx` 文件上传、去重、记录、删除和检索。
@@ -98,7 +104,21 @@ flowchart TD
         F2["RAG 查询"]
         F3["会话与消息"]
         F4["知识库与文档管理"]
-        F5["限流中间件"]
+        F5["知识缺口管理"]
+        F6["限流中间件"]
+    end
+
+    subgraph Graph["LangGraph Agent（AGENT_ENGINE=graph）"]
+        G1["Coordinator 任务分类"]
+        G2["Knowledge 检索"]
+        G3["Task：对比 / 报告 / 申请"]
+        G4["KnowledgeGap 缺口记录"]
+        G5["Finalize 输出"]
+        G1 --> G2
+        G2 --> G3
+        G2 --> G4
+        G3 --> G5
+        G4 --> G5
     end
 
     subgraph RAG["RAG 核心"]
@@ -126,6 +146,7 @@ flowchart TD
     A & B & C & D & E --> Gateway
     Gateway --> P1 --> FastAPI
     Gateway --> P2 --> UserService
+    FastAPI --> Graph
     FastAPI --> RAG
     FastAPI --> UserService
     FastAPI --> Storage
@@ -137,7 +158,7 @@ flowchart TD
 | 模块 | 技术 |
 | --- | --- |
 | 前端 | Vue 3、Vite 7、Vant 4、Vue Router、Pinia、vue-i18n、axios、marked、highlight.js、DOMPurify |
-| RAG 后端 | FastAPI、LangChain、LangChain Community、LangChain Chroma、LangChain Milvus、SQLAlchemy、Pydantic、Redis |
+| RAG 后端 | FastAPI、LangChain、LangGraph、LangChain Community、LangChain Chroma、LangChain Milvus、SQLAlchemy、Pydantic、Redis |
 | 用户服务 | Django 5.2、Django REST framework、Simple JWT、drf-yasg、Celery、django-redis |
 | 向量与检索 | ChromaDB、Milvus、BM25、jieba、sentence-transformers、Qwen3-Reranker-0.6B |
 | 模型服务 | 阿里云百炼 Qwen、Ollama、本地 reranker 模型 |
@@ -150,15 +171,17 @@ flowchart TD
 ├── backend/                         # FastAPI RAG 服务
 │   ├── app/
 │   │   ├── agent/                   # LangChain Agent、工具和中间件
+│   │   │   └── graph/               # LangGraph 图：coordinator/knowledge/task/knowledge_gap/finalize 节点
+│   │   ├── tools/                   # 任务工具：compare/report/form 三类 prompt 构造器
 │   │   ├── cache/                   # Redis 缓存装饰器
 │   │   ├── config/                  # rag/chroma/milvus/agent/prompt 配置
 │   │   ├── core/                    # 响应、限流、日志、异常处理
 │   │   ├── db/                      # MySQL / Redis 初始化
-│   │   ├── models/                  # 会话、消息、知识库、文档、分块表
+│   │   ├── models/                  # 会话、消息、知识库、文档、分块、知识缺口表
 │   │   ├── rag/                     # 检索、向量后端、重排序、切片
 │   │   ├── router/                  # FastAPI 路由
 │   │   ├── scheduler/               # 可选的目录监听导入任务
-│   │   └── services/                # 会话、知识库、文档、父子块服务
+│   │   └── services/                # 会话、知识库、文档、父子块、知识缺口服务
 │   ├── tests/                       # 后端测试
 │   ├── main.py                      # FastAPI 入口
 │   ├── pyproject.toml
@@ -171,13 +194,14 @@ flowchart TD
 │   ├── pyproject.toml
 │   └── .env.example
 ├── front/                           # Vue 3 移动端前端
-│   ├── src/views/                   # AIChat、Sessions、KnowledgeBase、My 等页面
+│   ├── src/views/                   # AIChat、Sessions、KnowledgeBase、KnowledgeGaps、My 等页面
 │   ├── src/components/              # TabBar 等公共组件
 │   ├── src/config/api.js            # 前端 API 端点
 │   ├── src/router/index.js          # 页面路由
 │   ├── src/store/                   # Pinia store
-│   └── vite.config.js               # Vite 代理配置
-├── docs/                            # Milvus、模型、排障等文档
+│   └── vite.config.js               # Vite 代理配置（端口/代理目标支持环境变量覆盖）
+├── docs/                            # 设计、计划、走查 runbook、测试语料、Milvus、模型、排障等文档
+│   └── test-corpus/                 # 企业行政制度测试语料 + 批量上传脚本 + 测试问题清单
 ├── docker-compose.milvus.yml        # 可选 Milvus 单机栈
 └── README.md
 ```
@@ -240,6 +264,9 @@ DJANGO_API_URL=http://127.0.0.1:8001
 RERANKER_TYPE=LOCAL
 RERANKER_MODEL_PATH=D:\Hugging_Face\models\Qwen3-Reranker-0.6B
 
+# Agent 引擎：loop（默认，传统单轮）或 graph（LangGraph 多节点）
+AGENT_ENGINE=loop
+
 # JWT：必须和 DjangoUserService/.env 的 JWT_SECRET_KEY 一致
 SECRET_KEY=change_me
 ALGORITHM=HS256
@@ -273,6 +300,24 @@ REDIS_CACHE_URL=redis://127.0.0.1:6379/1
 - `SECRET_KEY` 和 `JWT_SECRET_KEY` 必须保持一致，否则 FastAPI 无法校验 Django 签发的 JWT。
 - Windows 本地建议把 `localhost` 写成 `127.0.0.1`，避免 IPv6 回退导致接口或数据库请求变慢。
 - 使用 Milvus 时先启动 `docker-compose.milvus.yml`，并把 `VECTOR_STORE_BACKEND=milvus`。
+- `AGENT_ENGINE` 默认 `loop`（传统单轮 Agent）；切到 `graph` 启用 LangGraph 多节点引擎，会经过 Coordinator → Knowledge → Task / KnowledgeGap → Finalize 节点，前端会看到「识别任务类型 / 生成对比 / 记录知识缺口」等步骤提示。
+
+### 前端环境变量
+
+`front/vite.config.js` 支持以下进程级环境变量覆盖（多项目并存时避开端口冲突很有用）：
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `FRONT_PORT` | `3000` | 前端本地开发端口 |
+| `API_TARGET` | `http://127.0.0.1:8000` | `/api` 代理到的 FastAPI 地址 |
+| `USER_TARGET` | `http://127.0.0.1:8001` | `/user`、`/file` 代理到的 Django 地址 |
+
+PowerShell 启动示例（后端跑在 8010 时）：
+
+```powershell
+$env:API_TARGET = "http://127.0.0.1:8010"
+npm run dev
+```
 
 ## 部署与启动
 
@@ -485,7 +530,8 @@ Invoke-WebRequest -Uri "http://127.0.0.1:3000/" -UseBasicParsing
 | AI 问答 | `/aichat`、`/aichat/:sessionId` | 新对话、历史会话追问、流式回答、Markdown 渲染 |
 | 会话管理 | `/sessions` | 查看、进入和删除历史会话 |
 | 知识库 | `/knowledge` | 创建知识库、查看文档、上传文档、触发知识库问答 |
-| 我的 | `/my` | 用户信息、设置、账号管理入口 |
+| 知识缺口 | `/knowledge-gaps` | 查看 LangGraph KnowledgeGap 节点产生的待补充条目（普通用户看自己的，管理员看全部，可改状态） |
+| 我的 | `/my` | 用户信息、设置、账号管理入口、知识缺口入口 |
 | 登录 / 注册 | `/login`、`/register` | 用户认证 |
 | 个人资料 | `/profile` | 用户资料维护 |
 | 设置 | `/settings` | 偏好设置 |
@@ -514,6 +560,8 @@ Invoke-WebRequest -Uri "http://127.0.0.1:3000/" -UseBasicParsing
 | `POST` | `/api/kb/{kb_id}/documents` | 上传文档到知识库 |
 | `GET` | `/api/kb/{kb_id}/documents` | 查看知识库文档 |
 | `POST` | `/api/kb/{kb_id}/query` | 在指定知识库内问答 |
+| `GET` | `/api/knowledge-gaps` | 列出知识缺口（管理员看全部，普通用户看自己的，可按 `status` 筛选） |
+| `PATCH` | `/api/knowledge-gaps/{gap_id}` | 修改知识缺口状态：`pending` / `reviewed` / `resolved` / `ignored` |
 
 ### Django 用户服务
 
@@ -561,6 +609,33 @@ Invoke-WebRequest -Uri "http://127.0.0.1:3000/" -UseBasicParsing
 - `viewer`：可检索。
 - `editor`：可上传和删除文档。
 - `admin`：可管理成员和删除知识库。
+
+## LangGraph Agent 引擎
+
+将后端环境变量切到 `AGENT_ENGINE=graph` 后，`/api/agent/query/stream` 不再走传统 loop，而是走 `backend/app/agent/graph/` 下的多节点图：
+
+```text
+START → coordinator → (knowledge | finalize)
+        knowledge → (knowledge_gap | task | finalize)
+        knowledge_gap → finalize
+        task → finalize → END
+```
+
+各节点职责：
+
+| 节点 | 作用 |
+| --- | --- |
+| `coordinator` | LLM 把用户问题归类到 `knowledge_qa` / `document_compare` / `report_generation` / `document_generation` / `knowledge_gap` 之一，并初始化执行计划 |
+| `knowledge` | 命中知识库的混合检索 + reranker，把候选文档塞进 state |
+| `task` | 当任务类型属于「对比 / 报告 / 申请」时，调用 `app/tools/` 下对应的 prompt 构造器（`compare_tool` / `report_tool` / `form_tool`）让 LLM 产出结构化结果 |
+| `knowledge_gap` | 检索结果空或最高 `relevance_score` 低于阈值时，LLM 抽出未覆盖的知识点，去重过滤后写入 `knowledge_gaps` 表，并把"已记录待补充条目"写回 task_messages |
+| `finalize` | 汇总 task_messages / knowledge 上下文 / 引用，生成最终回答；同时发送 token 用量事件 |
+
+每个节点执行时都会通过 GraphRunner 把"识别任务类型 / 检索知识 / 生成对比 / 记录知识缺口 / 生成回答"这类步骤事件 push 到前端，前端聊天页的「步骤」区会逐条显示。
+
+知识缺口落库后会出现在 `/knowledge-gaps` 页：管理员看全部、普通用户只看自己产生的，状态可改 `pending` → `reviewed` / `resolved` / `ignored`。
+
+> 实测语料、走查命令和典型问题清单见 [docs/test-corpus/README.md](./docs/test-corpus/README.md) 与 [docs/walkthroughs/p5b-knowledge-gap-walkthrough.md](./docs/walkthroughs/p5b-knowledge-gap-walkthrough.md)。
 
 ## 测试与构建
 
@@ -636,6 +711,10 @@ docker start redis-rag
 - [FastAPI API 文档](./backend/api.md)
 - [Django 用户服务 API](./DjangoUserService/api.md)
 - [前端 API 说明](./front/api.md)
+- [测试语料与一键灌库脚本](./docs/test-corpus/README.md)
+- [知识缺口走查 runbook](./docs/walkthroughs/p5b-knowledge-gap-walkthrough.md)
+- [设计文档](./docs/design/)
+- [实现计划](./docs/plans/)
 - [ModelScope 模型说明](./docs/modelscope_model.md)
 - [Milvus 迁移说明](./docs/migrate-to-milvus.md)
 - [故障排除](./docs/troubleshooting.md)
