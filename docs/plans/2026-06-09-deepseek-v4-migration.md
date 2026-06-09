@@ -130,6 +130,13 @@ Run: `uv run python _tmp_deepseek_spike.py`
 3. **reasoning_content（开思考，对照）**：开启时 `reasoning_content` 出现在 chunk 的哪个字段（`additional_kwargs['reasoning_content']`？）→ 备将来可选开思考时用。
 4. **参数兼容**：`disabled` + 传 `top_p=0.7` 是否报错？（在 `make()` 里加 `top_p=0.7` 再跑一次）→ 决定 factory 是否保留 `top_p`。
 
+**实测结论（2026-06-09，langchain-deepseek 1.0.1）：**
+1. **usage**：`thinking=disabled` 下 `deepseek-v4-flash` 与 `deepseek-v4-pro` 的 `usage_metadata.total_tokens` 均有值；可继续使用 `extract_total_tokens`，目标为 `estimated=False`。
+2. **reasoning_content（关思考）**：`thinking=disabled` 的流式 chunk 未出现 `reasoning_content`，`content` 只包含最终答复 token，纯净。
+3. **reasoning_content（开思考，对照）**：`thinking=enabled` 时，非流式消息的 `additional_kwargs["reasoning_content"]` 包含完整思考内容；流式 chunk 的思考片段也出现在 `additional_kwargs["reasoning_content"]`，对应 chunk 的 `content` 为空，最终答复 token 才进入 `content`。
+4. **参数兼容**：`thinking=disabled` + `top_p=0.7` 实测不报错，`usage_metadata.total_tokens` 仍有值，流式 content 仍纯净；factory 可保留 `top_p=0.7`。
+5. **判定**：问题 1 与问题 2 均为「是」，允许继续 Phase 1。
+
 - [ ] **Step 3: 删除 spike 脚本**
 
 `rm backend/_tmp_deepseek_spike.py`。spike 结论已记录，脚本不入库。
