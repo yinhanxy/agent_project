@@ -30,5 +30,8 @@ class AgentState(TypedDict, total=False):
     # 输出
     final_answer: str
 
+    # token 计量（各节点 append 本次 LLM 调用的 total，reducer 累加）
+    token_usage: Annotated[int, operator.add]
+
     # 轨迹（append-only）
     trace: Annotated[list, operator.add]

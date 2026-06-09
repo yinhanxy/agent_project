@@ -452,7 +452,7 @@ async def get_agent_stream_response(
             full_response.append(event["data"])
             yield f"data: {json.dumps({'type': 'response', 'content': event['data']}, ensure_ascii=False)}\n\n"
         elif event["type"] == "usage":
-            yield f"data: {json.dumps({'type': 'usage', 'tokens': event['tokens'], 'estimated': True}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'usage', 'tokens': event['tokens'], 'estimated': event.get('estimated', True)}, ensure_ascii=False)}\n\n"
         elif event["type"] == "agent_plan":
             yield f"data: {json.dumps({'type': 'agent_plan', 'data': event['data']}, ensure_ascii=False)}\n\n"
         elif event["type"] == "agent_step_update":

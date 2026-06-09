@@ -65,6 +65,8 @@ async def knowledge_gap_node(state: AgentState) -> dict:
     )
     text = msg.content if hasattr(msg, "content") else str(msg)
     gap = _parse_gap(text, fallback_question=query)
+    from app.agent.token_utils import extract_total_tokens, estimate_text_tokens
+    gap_tokens = extract_total_tokens(msg) or estimate_text_tokens(text)
 
     identity = state.get("identity")
     user_id = (identity.user_id if identity else "") or ""
@@ -85,6 +87,7 @@ async def knowledge_gap_node(state: AgentState) -> dict:
 
     return {
         "task_messages": _build_notice_messages(query, gap),
+        "token_usage": gap_tokens,
         "trace": [{"agent": "knowledge_gap", "status": save_status,
                    "output": f"title={gap['title']} category={gap['category']}"}],
     }

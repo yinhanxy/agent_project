@@ -55,3 +55,22 @@ def estimate_history_query_tokens(history: list, query: str) -> int:
             msgs.append({"role": "assistant", "content": assistant_msg or ""})
     msgs.append({"role": "user", "content": query or ""})
     return estimate_messages_tokens(msgs)
+
+
+def extract_total_tokens(message):
+    """从 LangChain message/chunk 上抠 total_tokens；拿不到返回 None（由调用方估算兜底）。"""
+    if message is None:
+        return None
+    usage = getattr(message, "usage_metadata", None)
+    if isinstance(usage, dict):
+        total = usage.get("total_tokens")
+        if total:
+            return int(total)
+    rmeta = getattr(message, "response_metadata", None)
+    if isinstance(rmeta, dict):
+        token_usage = rmeta.get("token_usage") or rmeta.get("usage")
+        if isinstance(token_usage, dict):
+            total = token_usage.get("total_tokens")
+            if total:
+                return int(total)
+    return None

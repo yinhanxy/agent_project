@@ -39,13 +39,17 @@ async def finalize_node(state: AgentState) -> dict:
         msg = await chat_model.ainvoke(messages)
         answer = msg.content if hasattr(msg, "content") else str(msg)
         status = "done"
+        from app.agent.token_utils import extract_total_tokens
+        fin_tokens = extract_total_tokens(msg) or 0   # 0 表示由 runner 的流式估算口径兜底
     except Exception as e:
         from app.core.logger_handler import logger
         logger.error(f"[Finalize] 生成失败，输出兜底文本: {e}", exc_info=True)
         answer = "抱歉，生成回答时服务出现异常，请稍后重试。"
         status = "failed"
+        fin_tokens = 0
 
     return {
         "final_answer": answer,
+        "token_usage": fin_tokens,
         "trace": [{"agent": "finalize", "status": status, "output": answer[:200]}],
     }

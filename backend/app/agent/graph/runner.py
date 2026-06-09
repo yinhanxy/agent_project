@@ -5,6 +5,7 @@ from app.agent.graph.stream_bridge import translate_stream_item
 from app.agent.token_utils import (
     estimate_history_query_tokens,
     estimate_text_tokens,
+    extract_total_tokens,
 )
 from app.utils.auth_utils import RequestIdentity
 
@@ -17,28 +18,8 @@ def _initial_plan() -> list:
 
 
 def _chunk_total_tokens(message_chunk) -> Optional[int]:
-    """从 LangChain 的 message chunk 上抠 total_tokens（如果可用）。
-
-    不同 provider/版本暴露字段不一致，按优先级尝试：
-      1. usage_metadata.total_tokens（LangChain 标准接口）
-      2. response_metadata.token_usage.total_tokens（OpenAI 风格）
-    都拿不到返回 None，由调用方走估算兜底。
-    """
-    if message_chunk is None:
-        return None
-    usage = getattr(message_chunk, "usage_metadata", None)
-    if isinstance(usage, dict):
-        total = usage.get("total_tokens")
-        if total:
-            return int(total)
-    rmeta = getattr(message_chunk, "response_metadata", None)
-    if isinstance(rmeta, dict):
-        token_usage = rmeta.get("token_usage") or rmeta.get("usage")
-        if isinstance(token_usage, dict):
-            total = token_usage.get("total_tokens")
-            if total:
-                return int(total)
-    return None
+    """从 LangChain message chunk 上抠 total_tokens；委托 token_utils.extract_total_tokens（公共实现）。"""
+    return extract_total_tokens(message_chunk)
 
 
 class GraphRunner:
@@ -75,6 +56,7 @@ class GraphRunner:
         full_answer: list[str] = []
         final_citations: list = []
         final_answer_state = ""
+        graph_token_usage = 0
         async for item in self._graph.astream(
             state, stream_mode=["messages", "custom", "values"]
         ):
@@ -85,6 +67,8 @@ class GraphRunner:
                         final_citations = payload["citations"]
                     if payload.get("final_answer"):
                         final_answer_state = payload["final_answer"]
+                    if payload.get("token_usage") is not None:
+                        graph_token_usage = payload["token_usage"]
                 continue
 
             # 在 messages 模式下尽量从 chunk 读精确 usage（最后一帧通常带）
@@ -121,9 +105,11 @@ class GraphRunner:
             "data": {"id": "answer_generated", "status": "done",
                      "level": "success", "detail": "已生成最终回答", "title": "生成最终回答"},
         }
-        # done 帧用精确值优先，否则回落估算
-        final_tokens = accurate_tokens if accurate_tokens is not None else (
-            prompt_est + estimate_text_tokens(content_buf)
+        # done 帧 token 口径：优先用图内各节点累计的精确 total（含 coordinator/gap/finalize）；
+        # 为 0 时回落到 accurate_tokens（finalize chunk 精确值）或 prompt+finalize 输出的估算
+        estimated_total = prompt_est + estimate_text_tokens(content_buf)
+        final_tokens = graph_token_usage if graph_token_usage else (
+            accurate_tokens if accurate_tokens is not None else estimated_total
         )
         yield {"type": "done", "steps": [], "tokens": final_tokens, "citations": final_citations}
 
