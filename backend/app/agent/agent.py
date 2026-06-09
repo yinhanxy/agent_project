@@ -22,8 +22,11 @@ from app.utils.prompt_loader import load_prompt
 # ── token 估算 ────────────────────────────────────────────────────────────────
 # 流式过程中用 tiktoken 粗估 token 数（qwen 非精确，仅用于实时跳动），
 # 每轮 LLM 调用结束后由 API 返回的精确 usage 校准。
-
-_token_encoder = None
+# 估算函数已抽到 app.agent.token_utils（GraphRunner 共用）。
+from app.agent.token_utils import (
+    estimate_text_tokens as _estimate_text_tokens,
+    estimate_messages_tokens as _estimate_messages_tokens,
+)
 
 
 TOOL_STEP_TITLES = {
@@ -49,39 +52,6 @@ TOOL_RUNNING_DETAILS = {
     "get_weather_tools": "正在调用天气工具",
     "what_time_is_now": "正在读取当前时间",
 }
-
-
-def _get_encoder():
-    global _token_encoder
-    if _token_encoder is None:
-        try:
-            import tiktoken
-            _token_encoder = tiktoken.get_encoding("cl100k_base")
-        except Exception as e:  # tiktoken 不可用时降级为字符估算
-            logger.warning(f"[token估算] tiktoken 不可用，降级为字符估算: {e}")
-            _token_encoder = False
-    return _token_encoder
-
-
-def _estimate_text_tokens(text: str) -> int:
-    if not text:
-        return 0
-    enc = _get_encoder()
-    if enc:
-        return len(enc.encode(text))
-    return max(1, len(text) // 2)  # 降级：约 2 字符/token
-
-
-def _estimate_messages_tokens(messages: list) -> int:
-    total = 0
-    for m in messages:
-        content = m.get("content")
-        if isinstance(content, str):
-            total += _estimate_text_tokens(content)
-        for tc in m.get("tool_calls") or []:
-            total += _estimate_text_tokens(tc.get("function", {}).get("arguments", ""))
-        total += 4  # 每条消息的角色/分隔符开销近似
-    return total
 
 
 def _max_tool_rounds() -> int:
