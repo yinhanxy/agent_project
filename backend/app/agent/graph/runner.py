@@ -74,13 +74,17 @@ class GraphRunner:
 
         full_answer: list[str] = []
         final_citations: list = []
+        final_answer_state = ""
         async for item in self._graph.astream(
             state, stream_mode=["messages", "custom", "values"]
         ):
             mode, payload = item
             if mode == "values":
-                if isinstance(payload, dict) and payload.get("citations") is not None:
-                    final_citations = payload["citations"]
+                if isinstance(payload, dict):
+                    if payload.get("citations") is not None:
+                        final_citations = payload["citations"]
+                    if payload.get("final_answer"):
+                        final_answer_state = payload["final_answer"]
                 continue
 
             # 在 messages 模式下尽量从 chunk 读精确 usage（最后一帧通常带）
@@ -105,6 +109,12 @@ class GraphRunner:
                             "estimated": accurate_tokens is None,
                         }
                 yield event
+
+        # 兜底：若全程没有任何 token 流出（如 finalize 异常或 provider 没流 token），
+        # 用最终 state 的 final_answer 补一帧，保证用户能看到内容。
+        if not full_answer and final_answer_state:
+            yield {"type": "token", "data": final_answer_state}
+            content_buf = final_answer_state
 
         yield {
             "type": "agent_step_update",

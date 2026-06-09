@@ -69,9 +69,16 @@ async def coordinator_node(state: AgentState) -> dict:
         {"role": "system", "content": _COORDINATOR_PROMPT},
         {"role": "user", "content": f"{context}当前问题：{state['query']}"},
     ]
-    msg = await chat_model.ainvoke(messages)
-    text = msg.content if hasattr(msg, "content") else str(msg)
-    plan = _parse_plan(text)
+    try:
+        msg = await chat_model.ainvoke(messages)
+        text = msg.content if hasattr(msg, "content") else str(msg)
+        plan = _parse_plan(text)
+        plan_status = "done"
+    except Exception as e:
+        from app.core.logger_handler import logger
+        logger.error(f"[Coordinator] 分类失败，降级走检索: {e}", exc_info=True)
+        plan = dict(_FALLBACK_PLAN)
+        plan_status = "failed"
 
     writer({"kind": "step", "id": "task_understood", "status": "done",
             "level": "success", "detail": f"识别为：{plan['task_type']}",
@@ -79,7 +86,7 @@ async def coordinator_node(state: AgentState) -> dict:
 
     return {
         "plan": plan,
-        "trace": [{"agent": "coordinator", "status": "done",
+        "trace": [{"agent": "coordinator", "status": plan_status,
                    "output": json.dumps(plan, ensure_ascii=False)}],
     }
 

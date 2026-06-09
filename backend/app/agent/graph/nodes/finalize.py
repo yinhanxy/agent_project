@@ -35,10 +35,17 @@ async def finalize_node(state: AgentState) -> dict:
             "level": "info", "detail": "正在生成最终回答", "title": "生成最终回答"})
 
     messages = state.get("task_messages") or _build_messages(state)
-    msg = await chat_model.ainvoke(messages)
-    answer = msg.content if hasattr(msg, "content") else str(msg)
+    try:
+        msg = await chat_model.ainvoke(messages)
+        answer = msg.content if hasattr(msg, "content") else str(msg)
+        status = "done"
+    except Exception as e:
+        from app.core.logger_handler import logger
+        logger.error(f"[Finalize] 生成失败，输出兜底文本: {e}", exc_info=True)
+        answer = "抱歉，生成回答时服务出现异常，请稍后重试。"
+        status = "failed"
 
     return {
         "final_answer": answer,
-        "trace": [{"agent": "finalize", "status": "done", "output": answer[:200]}],
+        "trace": [{"agent": "finalize", "status": status, "output": answer[:200]}],
     }
