@@ -440,6 +440,9 @@ async def get_agent_stream_response(
     steps: list = []
     total_tokens = 0
     citations: list = []
+    # 累积每条 agent step 的最终态(以 step.id 为 key 合并 update),
+    # 以便流结束后随 assistant 消息一起落库,前端切回会话能还原
+    agent_steps_state: dict[str, dict] = {}
 
     engine = os.getenv("AGENT_ENGINE", "loop").strip().lower()
     if engine == "graph":
@@ -454,14 +457,26 @@ async def get_agent_stream_response(
         elif event["type"] == "usage":
             yield f"data: {json.dumps({'type': 'usage', 'tokens': event['tokens'], 'estimated': event.get('estimated', True)}, ensure_ascii=False)}\n\n"
         elif event["type"] == "agent_plan":
+            for s in event.get("data") or []:
+                if isinstance(s, dict) and s.get("id"):
+                    agent_steps_state[s["id"]] = dict(s)
             yield f"data: {json.dumps({'type': 'agent_plan', 'data': event['data']}, ensure_ascii=False)}\n\n"
         elif event["type"] == "agent_step_update":
+            s = event.get("data") or {}
+            if isinstance(s, dict) and s.get("id"):
+                agent_steps_state.setdefault(s["id"], {}).update(s)
             yield f"data: {json.dumps({'type': 'agent_step_update', 'data': event['data']}, ensure_ascii=False)}\n\n"
         elif event["type"] == "agent_step":
+            s = event.get("data") or {}
+            if isinstance(s, dict) and s.get("id"):
+                agent_steps_state.setdefault(s["id"], {}).update(s)
             yield f"data: {json.dumps({'type': 'agent_step', 'data': event['data']}, ensure_ascii=False)}\n\n"
         elif event["type"] == "step":
             steps.append(event["data"])
-            yield f"data: {json.dumps({'type': 'agent_step', 'data': _format_agent_step(event['data'])}, ensure_ascii=False)}\n\n"
+            formatted = _format_agent_step(event['data'])
+            if formatted.get("id"):
+                agent_steps_state.setdefault(formatted["id"], {}).update(formatted)
+            yield f"data: {json.dumps({'type': 'agent_step', 'data': formatted}, ensure_ascii=False)}\n\n"
         elif event["type"] == "done":
             steps = event["steps"]
             total_tokens = event.get("tokens", 0)
@@ -469,7 +484,12 @@ async def get_agent_stream_response(
 
     response = "".join(full_response) or "抱歉，我无法理解您的请求。"
     save_t0 = time.perf_counter()
-    await sm.session_manager.add_message(session_id, user_id, query, response)
+    final_agent_steps = list(agent_steps_state.values())
+    await sm.session_manager.add_message(
+        session_id, user_id, query, response,
+        citations=citations,
+        steps=final_agent_steps,
+    )
     logger.info(
         f"[Timing][AgentSSE] stage=history_save session={session_id} "
         f"duration={time.perf_counter() - save_t0:.3f}s"

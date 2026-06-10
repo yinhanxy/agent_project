@@ -1003,7 +1003,27 @@ onActivated(async () => {
 // 加载会话历史
 const loadSessionHistory = (session) => {
   messages.value = [];
-  if (session.history && session.history.length > 0) {
+  // 优先使用结构化 messages(含 citations / steps),便于切回会话还原右侧面板;
+  // 老接口或老数据回退到纯文本 history
+  const structured = Array.isArray(session?.messages) ? session.messages : [];
+  if (structured.length > 0) {
+    structured.forEach(m => {
+      if (m.role === 'user') {
+        messages.value.push({ role: 'user', content: m.content });
+      } else if (m.role === 'assistant') {
+        const steps = Array.isArray(m.steps) ? m.steps : [];
+        const citations = Array.isArray(m.citations) ? m.citations : [];
+        messages.value.push({
+          role: 'assistant',
+          content: m.content,
+          citations,
+          showCitations: false,
+          usedRag: steps.some(step => step?.id === 'tool_rag_summary_tools') || citations.length > 0,
+          steps,
+        });
+      }
+    });
+  } else if (session?.history && session.history.length > 0) {
     session.history.forEach(([userMsg, aiMsg]) => {
       messages.value.push({ role: 'user', content: userMsg });
       messages.value.push({ role: 'assistant', content: aiMsg, citations: [], showCitations: false, usedRag: false, steps: [] });

@@ -145,10 +145,32 @@ data: {"type": "done", "session_id": "550e8400-e29b-41d4-a716-446655440000"}
     "history": [
       ["用户问题1", "助手回答1"],
       ["用户问题2", "助手回答2"]
-    ]
+    ],
+    "messages": [
+      { "role": "user", "content": "用户问题1" },
+      {
+        "role": "assistant",
+        "content": "助手回答1",
+        "citations": [
+          { "filename": "doc.md", "score": 0.91, "chunk_preview": "...", "kb_id": "kb1" }
+        ],
+        "steps": [
+          { "id": "task_understood", "title": "理解用户问题", "status": "done", "level": "success" },
+          { "id": "tool_rag_summary_tools", "title": "已检索知识库", "status": "done", "level": "success", "detail": "已检索 2 个文档" },
+          { "id": "answer_generated", "title": "生成最终回答", "status": "done", "level": "success" }
+        ]
+      }
+    ],
+    "title": "会话标题",
+    "archived": false,
+    "archived_at": null
   }
 }
 ```
+
+> `history` 与 `messages` 同源:`history` 是兼容旧客户端的 `[user, assistant]` 文本对列表;
+> `messages` 是结构化消息列表,assistant 项额外携带 `citations` 与 `steps` 元数据(从 `chat_messages.metadata` 还原),
+> 用于前端切回会话时恢复右侧"引用文档"与"Agent 执行步骤"面板。旧数据无 metadata 时,这两个字段为空数组。
 
 **示例请求**：
 
@@ -168,7 +190,30 @@ Authorization: Bearer your-jwt-token
     "history": [
       ["什么是LangChain?", "LangChain是一个用于构建基于语言模型的应用程序的框架..."],
       ["它有哪些核心组件?", "LangChain的核心组件包括：LLMs、Prompts、Chains、Agents、Memory、Retrievers..."]
-    ]
+    ],
+    "messages": [
+      { "role": "user", "content": "什么是LangChain?" },
+      {
+        "role": "assistant",
+        "content": "LangChain是一个用于构建基于语言模型的应用程序的框架...",
+        "citations": [
+          { "filename": "intro.md", "score": 0.92, "chunk_preview": "LangChain 简介...", "kb_id": "kb_company" }
+        ],
+        "steps": [
+          { "id": "tool_rag_summary_tools", "title": "已检索知识库", "status": "done", "level": "success", "detail": "已检索 1 个文档" }
+        ]
+      },
+      { "role": "user", "content": "它有哪些核心组件?" },
+      {
+        "role": "assistant",
+        "content": "LangChain的核心组件包括...",
+        "citations": [],
+        "steps": []
+      }
+    ],
+    "title": "什么是LangChain?",
+    "archived": false,
+    "archived_at": null
   }
 }
 ```

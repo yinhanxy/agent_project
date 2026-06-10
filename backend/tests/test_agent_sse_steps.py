@@ -10,10 +10,21 @@ db_session_manager = importlib.import_module("app.services.database_session_mana
 
 
 class _FakeSessionManager:
+    def __init__(self):
+        self.last_call = None
+
     async def get_history(self, session_id, user_id):
         return []
 
-    async def add_message(self, session_id, user_id, query, response):
+    async def add_message(self, session_id, user_id, query, response, citations=None, steps=None):
+        self.last_call = {
+            "session_id": session_id,
+            "user_id": user_id,
+            "query": query,
+            "response": response,
+            "citations": citations,
+            "steps": steps,
+        }
         return None
 
 
@@ -161,3 +172,38 @@ async def test_agent_stream_response_sends_plan_and_status_updates(monkeypatch):
             "detail": "正在检索相关知识库",
         },
     } in events
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_response_persists_steps_and_citations(monkeypatch):
+    """流结束时,累积后的 step 最终态(按 id 合并)与 citations 应一并传给 add_message。"""
+    fake_sm = _FakeSessionManager()
+    monkeypatch.setattr(db_session_manager, "database_session_manager", fake_sm)
+    monkeypatch.setattr(agent.agent_loop, "stream", _fake_agent_stream)
+
+    chunks = [
+        chunk
+        async for chunk in agent.get_agent_stream_response(
+            "什么是 LangChain",
+            "session-1",
+            RequestIdentity(user_id="u1"),
+        )
+    ]
+    assert chunks  # 消费完流
+
+    assert fake_sm.last_call is not None
+    assert fake_sm.last_call["citations"] == [{"filename": "doc.md", "score": 0.9}]
+
+    persisted_steps = fake_sm.last_call["steps"]
+    assert isinstance(persisted_steps, list)
+    by_id = {s["id"]: s for s in persisted_steps if isinstance(s, dict) and s.get("id")}
+
+    # plan 里的三步都在,update 之后 tool_rag_summary_tools 的 status 被 step 事件最终覆盖为 done
+    assert set(by_id.keys()) == {
+        "task_understood",
+        "tool_rag_summary_tools",
+        "answer_generated",
+    }
+    assert by_id["tool_rag_summary_tools"]["status"] == "done"
+    assert by_id["tool_rag_summary_tools"]["level"] == "success"
+    assert by_id["tool_rag_summary_tools"]["detail"] == "检索到 2 个文档"

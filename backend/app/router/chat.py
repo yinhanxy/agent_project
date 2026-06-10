@@ -192,6 +192,7 @@ async def get_session(session_id: str, user_id: str = Depends(get_current_user_i
     return success_response(data=SessionResponse(
         session_id=session_id,
         history=session_data.get("history", []),
+        messages=session_data.get("messages", []),
         title=session_data.get("title"),
         archived=session_data.get("archived", False),
         archived_at=session_data.get("archived_at")

@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional
 
 
 class QueryRequest(BaseModel):
@@ -9,14 +9,6 @@ class QueryRequest(BaseModel):
 
 class RAGRequest(BaseModel):
     query: str
-
-
-class SessionResponse(BaseModel):
-    session_id: str
-    history: List[Tuple[str, str]]
-    title: Optional[str] = None
-    archived: bool = False
-    archived_at: Optional[str] = None
 
 
 class AgentStep(BaseModel):
@@ -38,6 +30,23 @@ class Citation(BaseModel):
     chunk_preview: str
     score: float
     kb_id: Optional[str] = None
+
+
+class SessionMessage(BaseModel):
+    """会话历史的结构化单条消息;assistant 消息会附带 citations / steps 元数据。"""
+    role: str
+    content: str
+    citations: List[Citation] = []
+    steps: List[Dict[str, Any]] = []
+
+
+class SessionResponse(BaseModel):
+    session_id: str
+    history: List[Tuple[str, str]]
+    messages: List[SessionMessage] = []
+    title: Optional[str] = None
+    archived: bool = False
+    archived_at: Optional[str] = None
 
 
 class RAGResponse(BaseModel):

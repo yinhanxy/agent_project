@@ -46,8 +46,18 @@ class DatabaseSessionManager:
                         i += 2
                     else:
                         i += 1
+                # 构建结构化消息列表(供前端切回会话时还原 citations / steps)
+                structured_messages = []
+                for m in messages:
+                    item = {"role": m.role, "content": m.content}
+                    if m.role == "assistant":
+                        meta = m.metadata_ or {}
+                        item["citations"] = list(meta.get("citations") or [])
+                        item["steps"] = list(meta.get("steps") or [])
+                    structured_messages.append(item)
                 return {
                     "history": history,
+                    "messages": structured_messages,
                     "title": result.title,
                     "archived": result.archived,
                     "archived_at": result.archived_at.isoformat() if result.archived_at else None
@@ -79,6 +89,7 @@ class DatabaseSessionManager:
                     logger.info(f"【数据库会话管理】创建新会话: {session_id} 属于用户: {user_id}")
                     return {
                         "history": [],
+                        "messages": [],
                         "title": new_session.title,
                         "archived": False,
                         "archived_at": None
@@ -104,8 +115,20 @@ class DatabaseSessionManager:
                     detail="归档会话不能继续对话，请先取消归档"
                 )
 
-    async def add_message(self, session_id: str, user_id: str, user_message: str, assistant_message: str):
-        """添加消息并保存到数据库"""
+    async def add_message(
+        self,
+        session_id: str,
+        user_id: str,
+        user_message: str,
+        assistant_message: str,
+        citations: Optional[List[Dict]] = None,
+        steps: Optional[List[Dict]] = None,
+    ):
+        """添加消息并保存到数据库。
+
+        :param citations: 检索引用列表(可选)。提供时与 steps 一起写入 assistant 消息的 metadata_。
+        :param steps: agent 执行步骤列表(可选,前端 SSE schema 格式 {id, level, status, title, detail})。
+        """
         async with AsyncSessionLocal() as db:
             # 检查会话id是否存在
             existing_session = await db.run_sync(
@@ -157,11 +180,18 @@ class DatabaseSessionManager:
             )
             db.add(user_msg)
 
-            # 添加助手消息
+            # 添加助手消息;若调用方提供了 citations 或 steps,则一并写入 metadata_
+            assistant_metadata = None
+            if citations is not None or steps is not None:
+                assistant_metadata = {
+                    "citations": list(citations or []),
+                    "steps": list(steps or []),
+                }
             assistant_msg = ChatMessage(
                 session_id=session.id,
                 role="assistant",
-                content=assistant_message
+                content=assistant_message,
+                metadata_=assistant_metadata,
             )
             db.add(assistant_msg)
 
