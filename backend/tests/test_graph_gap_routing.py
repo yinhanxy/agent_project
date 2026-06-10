@@ -3,7 +3,8 @@ import pytest
 from app.agent.graph.nodes.task import route_after_knowledge
 
 
-def test_route_to_gap_when_not_enough():
+def test_route_to_gap_when_not_enough(monkeypatch):
+    monkeypatch.setenv("AGENT_CRITIC_ENABLE", "false")   # critic 关闭时回退直连 gap
     state = {"plan": {"task_type": "knowledge_qa"}, "documents": [], "is_enough": False}
     assert route_after_knowledge(state) == "knowledge_gap"
 
@@ -13,7 +14,8 @@ def test_route_to_gap_when_coordinator_says_gap():
     assert route_after_knowledge(state) == "knowledge_gap"
 
 
-def test_gap_priority_over_task():
+def test_gap_priority_over_task(monkeypatch):
+    monkeypatch.setenv("AGENT_CRITIC_ENABLE", "false")   # critic 关闭时回退直连 gap
     state = {"plan": {"task_type": "document_compare"}, "documents": [], "is_enough": False}
     assert route_after_knowledge(state) == "knowledge_gap"
 
@@ -30,7 +32,8 @@ def test_route_to_finalize_for_plain_qa():
 
 @pytest.mark.asyncio
 async def test_graph_routes_through_gap_node_when_no_docs(monkeypatch):
-    """is_enough=False（无文档）：图应经过 knowledge_gap 节点，落库被调用。"""
+    """is_enough=False（无文档）：critic 关闭时图应经过 knowledge_gap 节点，落库被调用。"""
+    monkeypatch.setenv("AGENT_CRITIC_ENABLE", "false")
     import app.agent.graph.nodes.coordinator as co
     import app.agent.graph.nodes.knowledge as kn
     import app.agent.graph.nodes.finalize as fz

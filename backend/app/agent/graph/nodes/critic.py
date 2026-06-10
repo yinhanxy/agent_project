@@ -111,3 +111,29 @@ async def critic_node(state: AgentState) -> dict:
     if revision_inc:
         update["revision_count"] = revision_inc
     return update
+
+
+def route_after_critic(state: AgentState) -> str:
+    """critic 之后的三档路由：
+    - relevant（或异常降级）：证据其实够用 → 恢复正常 task/finalize 选择
+    - needs_rewrite 且未超改写上限 → knowledge 带 reformulated_query 重检索
+    - needs_rewrite 已达上限 / out_of_scope → knowledge_gap
+    """
+    # 局部 import 取 TASK_TYPES：避免与 task.py 形成模块级循环依赖
+    from app.agent.graph.nodes.task import TASK_TYPES_NEEDING_TASK
+    from app.agent.graph.critic_config import critic_max_revisions
+
+    verdict = (state.get("critic_verdict") or {}).get("verdict", "relevant")
+    plan = state.get("plan") or {}
+
+    if verdict == "needs_rewrite":
+        # revision_count 已由 critic_node 累加；≤ 上限才允许这次重检索
+        if state.get("revision_count", 0) <= critic_max_revisions():
+            return "knowledge"
+        return "knowledge_gap"
+    if verdict == "out_of_scope":
+        return "knowledge_gap"
+    # relevant：恢复正常路由（有任务工具且有文档则走 task，否则 finalize）
+    if plan.get("task_type") in TASK_TYPES_NEEDING_TASK and state.get("documents"):
+        return "task"
+    return "finalize"

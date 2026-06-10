@@ -1,4 +1,5 @@
 from app.agent.graph._stream import safe_get_stream_writer
+from app.agent.graph.critic_config import critic_enabled
 from app.agent.graph.state import AgentState
 from app.tools import compare_tool, report_tool, form_tool
 
@@ -45,9 +46,15 @@ async def task_node(state: AgentState) -> dict:
 
 
 def route_after_knowledge(state: AgentState) -> str:
-    """knowledge 之后的路由。缺口判断优先于 task（无依据不强行生成）。"""
+    """knowledge 之后的路由。
+
+    is_enough=False：critic 开启则交给证据评估（可改写救援）；关闭则沿用原行为直接 gap。
+    is_enough=True：coordinator 显式判 gap 优先；否则有任务工具且有文档走 task，余下 finalize。
+    """
     plan = state.get("plan") or {}
-    if not state.get("is_enough", True) or plan.get("task_type") == "knowledge_gap":
+    if not state.get("is_enough", True):
+        return "critic" if critic_enabled() else "knowledge_gap"
+    if plan.get("task_type") == "knowledge_gap":
         return "knowledge_gap"
     if plan.get("task_type") in TASK_TYPES_NEEDING_TASK and state.get("documents"):
         return "task"
