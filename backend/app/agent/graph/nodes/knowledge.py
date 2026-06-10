@@ -16,16 +16,28 @@ async def _build_filter(identity: Optional[RequestIdentity]):
 
 
 async def knowledge_node(state: AgentState) -> dict:
-    """检索知识依据。权限 identity 从 state 取，绝不走隐式传递。"""
+    """检索知识依据。权限 identity 从 state 取，绝不走隐式传递。
+
+    若 state 带 reformulated_query（critic 改写救援），用它重检索；否则用原 query。
+    """
     writer = safe_get_stream_writer()
-    writer({"kind": "step", "id": "tool_rag_summary_tools", "status": "running",
-            "level": "info", "detail": "正在检索相关知识库", "title": "检索相关知识库"})
+    reformulated = state.get("reformulated_query")
+    actual_query = reformulated or state["query"]
+    is_retry = bool(reformulated)
+
+    if is_retry:
+        writer({"kind": "step", "id": "knowledge_refetching", "status": "running",
+                "level": "info", "detail": f"改写后的查询：{actual_query[:30]}...",
+                "title": "用更精细的查询重新检索"})
+    else:
+        writer({"kind": "step", "id": "tool_rag_summary_tools", "status": "running",
+                "level": "info", "detail": "正在检索相关知识库", "title": "检索相关知识库"})
 
     identity = state.get("identity")
     node_status = "done"
     try:
         filter_meta = await _build_filter(identity)
-        result = await rag_service.get_documents_for_agent(state["query"], filter_meta=filter_meta)
+        result = await rag_service.get_documents_for_agent(actual_query, filter_meta=filter_meta)
         documents = result.get("documents", [])
         citations = result.get("citations", [])
         # is_enough 由 rag_service 按缺口阈值（相关度）判定；缺字段时回退为"有无文档"，兼容旧返回/桩
@@ -37,14 +49,18 @@ async def knowledge_node(state: AgentState) -> dict:
         documents, citations, is_enough, max_score = [], [], False, None
         node_status = "failed"
 
-    writer({"kind": "step", "id": "tool_rag_summary_tools", "status": "done",
-            "level": "success", "detail": f"已检索 {len(citations)} 个文档",
-            "title": "已检索知识库"})
+    writer({"kind": "step",
+            "id": "knowledge_refetching" if is_retry else "tool_rag_summary_tools",
+            "status": "done", "level": "success",
+            "detail": f"已检索 {len(citations)} 个文档", "title": "已检索知识库"})
 
+    agent_name = "knowledge_retry" if is_retry else "knowledge"
     return {
         "documents": documents,
         "citations": citations,
         "is_enough": is_enough,
-        "trace": [{"agent": "knowledge", "status": node_status,
-                   "output": f"documents={len(documents)} is_enough={is_enough} max_score={max_score}"}],
+        "max_score": max_score,
+        "trace": [{"agent": agent_name, "status": node_status,
+                   "output": f"actual_query={actual_query} documents={len(documents)} "
+                             f"is_enough={is_enough} max_score={max_score}"}],
     }
