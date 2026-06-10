@@ -23,6 +23,7 @@ class AgentState(TypedDict, total=False):
     documents: list                     # list[str]
     citations: list                     # list[dict]，复用现有 citations 结构
     is_enough: bool
+    max_score: float                    # 检索最高相关度；critic 评估证据 / 判断是否阈值过严
 
     # Task 产出
     task_messages: list                 # finalize 用的任务专属 LLM messages；空则走默认问答
@@ -35,3 +36,11 @@ class AgentState(TypedDict, total=False):
 
     # 轨迹（append-only）
     trace: Annotated[list, operator.add]
+
+    # ── Critic 反馈回路（本计划新增）──
+    # critic 触发改写重做时 +1，reducer 累加（与 trace/token_usage 一致，兼容并行）
+    revision_count: Annotated[int, operator.add]
+    # 最近一次 critic 输出 {verdict, reason, reformulated_query}；每次覆盖（无 reducer）
+    critic_verdict: dict
+    # critic 给出的改写 query；knowledge 重检索时优先用；每次覆盖（无 reducer）
+    reformulated_query: str

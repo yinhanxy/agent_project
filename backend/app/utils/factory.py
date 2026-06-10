@@ -17,6 +17,8 @@ load_dotenv()
 _DEEPSEEK_ROLE_ENV = {
     "coordinator": ("DEEPSEEK_MODEL_COORDINATOR", "deepseek-v4-flash"),
     "knowledge_gap": ("DEEPSEEK_MODEL_COORDINATOR", "deepseek-v4-flash"),
+    # critic 证据评估：与 coordinator/knowledge_gap 同档位（便宜快的 flash）
+    "critic": ("DEEPSEEK_MODEL_COORDINATOR", "deepseek-v4-flash"),
     "finalize": ("DEEPSEEK_MODEL_FINALIZE", "deepseek-v4-pro"),
     # RAG 摘要 / HyDE 等内部轻量任务，用便宜快的 flash
     "rag": ("DEEPSEEK_MODEL_RAG", "deepseek-v4-flash"),

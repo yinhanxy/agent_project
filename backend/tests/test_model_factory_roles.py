@@ -34,5 +34,7 @@ def test_deepseek_role_mapping_uses_flash_and_pro(monkeypatch):
         assert factory.get_chat_model("finalize").model_name == "deepseek-v4-pro"
         # RAG 摘要 / HyDE 等内部轻量任务用 flash
         assert factory.get_chat_model("rag").model_name == "deepseek-v4-flash"
+        # critic 证据评估：与 coordinator 同档（flash）
+        assert factory.get_chat_model("critic").model_name == "deepseek-v4-flash"
     finally:
         factory.get_chat_model.cache_clear()
