@@ -11,7 +11,7 @@ from langsmith import traceable
 from app.rag.vector_store import VectorStoreService
 from app.rag.reorder_service import reorder_service
 from app.services.parent_chunk_service import parent_chunk_service
-from app.utils.factory import chat_model
+from app.utils.factory import get_chat_model
 from app.utils.prompt_loader import load_prompt
 from app.core.logger_handler import logger
 
@@ -42,7 +42,7 @@ class RagService:
         self._retriever_lock = asyncio.Lock()
         self.prompt_text = load_prompt(prompt_type="rag_summary_prompt")
         self.prompt_template = PromptTemplate.from_template(self.prompt_text)
-        self.chat_model = chat_model
+        self.chat_model = get_chat_model("rag")
         self.chain = self._init_chain()
         self.hyde_prompt_template = PromptTemplate.from_template(
             "基于以下问题，生成一个详细的假设性回答，我会根据你的这个假设性回答在向量数据库里检索文档：\n\n问题：{query}\n\n假设性回答："

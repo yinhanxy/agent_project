@@ -18,6 +18,8 @@ _DEEPSEEK_ROLE_ENV = {
     "coordinator": ("DEEPSEEK_MODEL_COORDINATOR", "deepseek-v4-flash"),
     "knowledge_gap": ("DEEPSEEK_MODEL_COORDINATOR", "deepseek-v4-flash"),
     "finalize": ("DEEPSEEK_MODEL_FINALIZE", "deepseek-v4-pro"),
+    # RAG 摘要 / HyDE 等内部轻量任务，用便宜快的 flash
+    "rag": ("DEEPSEEK_MODEL_RAG", "deepseek-v4-flash"),
 }
 
 

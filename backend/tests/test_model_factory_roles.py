@@ -25,11 +25,14 @@ def test_deepseek_role_mapping_uses_flash_and_pro(monkeypatch):
     # 清掉可能存在的模型名覆盖，确保走默认 flash/pro
     monkeypatch.delenv("DEEPSEEK_MODEL_COORDINATOR", raising=False)
     monkeypatch.delenv("DEEPSEEK_MODEL_FINALIZE", raising=False)
+    monkeypatch.delenv("DEEPSEEK_MODEL_RAG", raising=False)
     # get_chat_model 用 lru_cache，先清缓存再按新环境构造，结束后再清避免污染其他用例
     factory.get_chat_model.cache_clear()
     try:
         assert factory.get_chat_model("coordinator").model_name == "deepseek-v4-flash"
         assert factory.get_chat_model("knowledge_gap").model_name == "deepseek-v4-flash"
         assert factory.get_chat_model("finalize").model_name == "deepseek-v4-pro"
+        # RAG 摘要 / HyDE 等内部轻量任务用 flash
+        assert factory.get_chat_model("rag").model_name == "deepseek-v4-flash"
     finally:
         factory.get_chat_model.cache_clear()
