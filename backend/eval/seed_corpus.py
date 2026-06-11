@@ -1,4 +1,4 @@
-"""幂等把 docs/test-corpus 灌入向量库，供评估检索。
+r"""幂等把 docs/test-corpus 灌入向量库，供评估检索。
 
 用法（在 backend 目录）：
     .\.venv\Scripts\python.exe -m eval.seed_corpus
