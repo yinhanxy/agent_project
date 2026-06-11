@@ -13,6 +13,8 @@ class EvalCase:
     answer_assertions: dict = field(default_factory=dict)  # {"must_include":[], "must_not_include":[]}
     should_refuse: bool = False
     history: list = field(default_factory=list)            # [[user, assistant], ...]
+    expected_route: Optional[str] = None          # coordinator 预期路由
+    expect_gap_triggered: Optional[bool] = None    # 是否预期触发知识缺口
 
 
 def load_cases(path) -> list[EvalCase]:
@@ -31,5 +33,7 @@ def load_cases(path) -> list[EvalCase]:
             answer_assertions=raw.get("answer_assertions", {}),
             should_refuse=raw.get("should_refuse", False),
             history=raw.get("history", []),
+            expected_route=raw.get("expected_route"),
+            expect_gap_triggered=raw.get("expect_gap_triggered"),
         ))
     return cases

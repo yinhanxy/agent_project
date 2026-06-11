@@ -1,0 +1,12 @@
+{"id":"rt-001","question":"一线城市出差住宿费每晚上限是多少？","type":"knowledge_qa","expected_route":"knowledge_qa","expect_gap_triggered":false}
+{"id":"rt-002","question":"工龄满12年每年有几天年假？","type":"knowledge_qa","expected_route":"knowledge_qa","expect_gap_triggered":false}
+{"id":"rt-003","question":"对比一下差旅报销办法2023版和2025版有哪些差异？","type":"document_compare","expected_route":"document_compare","expect_gap_triggered":false}
+{"id":"rt-004","question":"新版报销制度在审批额度和报销时限上比旧版有什么变化？","type":"document_compare","expected_route":"document_compare","expect_gap_triggered":false}
+{"id":"rt-005","question":"根据考勤与请假制度，生成一份请假类型与待遇的要点报告。","type":"report_generation","expected_route":"report_generation","expect_gap_triggered":false}
+{"id":"rt-006","question":"帮我整理一份公司各类假期的对照报告。","type":"report_generation","expected_route":"report_generation","expect_gap_triggered":false}
+{"id":"rt-007","question":"帮我写一份远程办公申请，事由是家中老人需要照顾，时间下周一到周三。","type":"document_generation","expected_route":"document_generation","expect_gap_triggered":false}
+{"id":"rt-008","question":"帮我起草一份病假申请，因感冒发烧请假两天。","type":"document_generation","expected_route":"document_generation","expect_gap_triggered":false}
+{"id":"rt-009","question":"公司的员工持股/股权激励计划细则是怎样的？","type":"knowledge_gap","expected_route":"knowledge_gap","expect_gap_triggered":true}
+{"id":"rt-010","question":"境外出差的签证费和国际机票怎么报销？","type":"knowledge_gap","expected_route":"knowledge_gap","expect_gap_triggered":true}
+{"id":"rt-011","question":"公司有没有补充商业医疗保险？保额多少？","type":"knowledge_gap","expected_route":"knowledge_gap","expect_gap_triggered":true}
+{"id":"rt-012","question":"陪产假和育儿假各有几天？","type":"knowledge_gap","expected_route":"knowledge_gap","expect_gap_triggered":true}

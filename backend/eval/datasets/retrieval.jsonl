@@ -6,3 +6,13 @@
 {"id":"qa-006","question":"2025版差旅报销的审批额度上限是多少？","type":"knowledge_qa","expected_doc":"02-差旅与报销管理办法-2025版.md","answer_assertions":{"must_include":["8000"],"must_not_include":["5000"]},"should_refuse":false}
 {"id":"qa-007","question":"报销时限是多少天？","type":"knowledge_qa","expected_doc":"02-差旅与报销管理办法-2025版.md","answer_assertions":{"must_include":["60"]},"should_refuse":false}
 {"id":"qa-008","question":"公司的股权激励计划细则是怎样的？","type":"knowledge_qa","expected_doc":null,"answer_assertions":{},"should_refuse":true}
+{"id":"qa-009","question":"出差到二线城市住一晚最多能报多少钱？","type":"knowledge_qa","expected_doc":"02-差旅与报销管理办法-2025版.md","answer_assertions":{"must_include":["420"]},"should_refuse":false}
+{"id":"qa-010","question":"加班调休最晚要在多久内用完？","type":"knowledge_qa","expected_doc":"03-考勤与请假管理制度.md","answer_assertions":{"must_include":["3"]},"should_refuse":false}
+{"id":"qa-011","question":"员工离职时领用的办公设备要怎么处理？","type":"knowledge_qa","expected_doc":"06-IT设备与办公用品管理规定.md","answer_assertions":{"must_include":["归还"]},"should_refuse":false}
+{"id":"qa-012","question":"新版制度里出差市内交通费每天最多报多少？","type":"knowledge_qa","expected_doc":"02-差旅与报销管理办法-2025版.md","answer_assertions":{"must_include":["120"],"must_not_include":["80"]},"should_refuse":false}
+{"id":"qa-013","question":"2025版出差餐费补贴每天是多少？","type":"knowledge_qa","expected_doc":"02-差旅与报销管理办法-2025版.md","answer_assertions":{"must_include":["130"],"must_not_include":["100"]},"should_refuse":false}
+{"id":"qa-014","question":"常规远程办公一周最多能申请几天？","type":"knowledge_qa","expected_doc":"04-远程办公管理规定.md","answer_assertions":{"must_include":["2"]},"should_refuse":false}
+{"id":"qa-015","question":"申请远程办公对转正时间和绩效有什么要求？","type":"knowledge_qa","expected_doc":"04-远程办公管理规定.md","answer_assertions":{"must_include":["3","B"]},"should_refuse":false}
+{"id":"qa-016","question":"试用期工资按转正后工资的多少发？","type":"knowledge_qa","expected_doc":"05-员工入职与转正管理办法.md","answer_assertions":{"must_include":["90"]},"should_refuse":false}
+{"id":"qa-017","question":"转正考核综合评分至少多少分才能通过？","type":"knowledge_qa","expected_doc":"05-员工入职与转正管理办法.md","answer_assertions":{"must_include":["70"]},"should_refuse":false}
+{"id":"qa-018","question":"IT设备一般故障多久响应，笔记本标准几年更换？","type":"knowledge_qa","expected_doc":"06-IT设备与办公用品管理规定.md","answer_assertions":{"must_include":["1","4"]},"should_refuse":false}
