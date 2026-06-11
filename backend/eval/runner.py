@@ -7,6 +7,7 @@ import argparse
 import asyncio
 import json
 import os
+import statistics
 import subprocess
 import sys
 from datetime import datetime
@@ -14,19 +15,31 @@ from pathlib import Path
 
 from eval.config import CONFIG_MATRIX
 from eval.judges.assertion_judge import check_assertions
-from eval.metrics import recall_at_k, mrr, aggregate
+from eval.metrics import recall_at_k, mrr, aggregate, route_accuracy, gap_precision_recall
 from eval.report import render_summary, render_cost
 from eval.schema import load_cases
 
 EVAL_DIR = Path(__file__).resolve().parent
 DATASET = EVAL_DIR / "datasets" / "retrieval.jsonl"
+ROUTING = EVAL_DIR / "datasets" / "routing.jsonl"
 REPORTS = EVAL_DIR / "reports"
+EVAL_REPEAT = int(os.getenv("EVAL_REPEAT", "2"))
 
 
-def score_results(cases: list, raw: list) -> tuple:
-    """把子进程产出的每题原始结果，算成 (聚合指标 dict, 成本 dict)。"""
+def _mean_std(values: list) -> dict:
+    vals = [v for v in values if v is not None]
+    if not vals:
+        return {"mean": None, "std": None}
+    return {"mean": sum(vals) / len(vals),
+            "std": statistics.pstdev(vals) if len(vals) > 1 else 0.0}
+
+
+def _score_single(cases: list, raw: list) -> tuple:
+    """单次运行的原始结果 -> (指标 dict, 成本 dict)。"""
     by_id = {r["id"]: r for r in raw}
     per_case = []
+    route_pairs = []
+    gap_pairs = []
     for c in cases:
         r = by_id.get(c.id, {})
         ranked = r.get("ranked_filenames", [])
@@ -35,48 +48,69 @@ def score_results(cases: list, raw: list) -> tuple:
             "mrr": mrr(ranked, c.expected_doc),
             "assert_pass": check_assertions(r.get("answer", ""), c.answer_assertions),
         })
+        route_pairs.append((r.get("route"), c.expected_route))
+        gap_pairs.append((r.get("gap_triggered", False), c.expect_gap_triggered))
     metrics = aggregate(per_case)
+    metrics["route_accuracy"] = route_accuracy(route_pairs)
+    gp, gr = gap_precision_recall(gap_pairs)
+    metrics["gap_precision"] = gp
+    metrics["gap_recall"] = gr
     toks = [r.get("tokens", 0) for r in raw] or [0]
     lats = [r.get("latency_s", 0.0) for r in raw] or [0.0]
     cost = {"avg_tokens": sum(toks) / len(toks), "avg_latency_s": sum(lats) / len(lats)}
     return metrics, cost
 
 
+def score_runs(cases: list, runs: list) -> tuple:
+    """多次运行 -> 每个指标 mean/std。runs: list[raw_results]。"""
+    scored = [_score_single(cases, raw) for raw in runs]
+    metric_keys = sorted({k for m, _ in scored for k in m.keys() if k != "n"})
+    cost_keys = sorted({k for _, c in scored for k in c.keys()})
+    metrics = {k: _mean_std([m.get(k) for m, _ in scored]) for k in metric_keys}
+    metrics["n"] = scored[0][0].get("n", 0) if scored else 0
+    metrics["repeat"] = len(runs)
+    cost = {k: _mean_std([c.get(k) for _, c in scored]) for k in cost_keys}
+    return metrics, cost
+
+
 async def _worker(out_path: str):
     """子进程：按当前 env 编译被测系统，跑全量数据集，写 json。"""
     from eval.system_under_test import run_dataset
-    cases = load_cases(DATASET)
+    cases = load_cases(DATASET) + load_cases(ROUTING)
     raw = await run_dataset(cases)
     Path(out_path).write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
 
 
 def _run_config_subprocess(cfg, tmp_dir: Path) -> list:
-    """父进程：起一个注入 env 的子进程跑某配置，读回原始结果。"""
-    out_path = tmp_dir / f"{cfg.name}.json"
+    """父进程：起注入 env 的子进程多次跑某配置，读回多次原始结果。"""
     env = {**os.environ, **cfg.env}
-    proc = subprocess.run(
-        [sys.executable, "-m", "eval.runner", "--worker", "--out", str(out_path)],
-        env=env, cwd=str(EVAL_DIR.parent),   # cwd=backend
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f"配置 {cfg.name} 子进程失败，returncode={proc.returncode}")
-    return json.loads(out_path.read_text(encoding="utf-8"))
+    runs = []
+    for i in range(EVAL_REPEAT):
+        out_path = tmp_dir / f"{cfg.name}.run{i}.json"
+        proc = subprocess.run(
+            [sys.executable, "-m", "eval.runner", "--worker", "--out", str(out_path)],
+            env=env, cwd=str(EVAL_DIR.parent),   # cwd=backend
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(f"配置 {cfg.name} 第{i}次子进程失败，returncode={proc.returncode}")
+        runs.append(json.loads(out_path.read_text(encoding="utf-8")))
+    return runs
 
 
 def main():
-    cases = load_cases(DATASET)
+    cases = load_cases(DATASET) + load_cases(ROUTING)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_dir = REPORTS / stamp
     out_dir.mkdir(parents=True, exist_ok=True)
 
     metrics_matrix, cost_matrix, details = {}, {}, {}
     for cfg in CONFIG_MATRIX:
-        print(f"[runner] 跑配置 {cfg.name} env={cfg.env}")
-        raw = _run_config_subprocess(cfg, out_dir)
-        metrics, cost = score_results(cases, raw)
+        print(f"[runner] 跑配置 {cfg.name} ×{EVAL_REPEAT} env={cfg.env}")
+        runs = _run_config_subprocess(cfg, out_dir)
+        metrics, cost = score_runs(cases, runs)
         metrics_matrix[cfg.name] = metrics
         cost_matrix[cfg.name] = cost
-        details[cfg.name] = raw
+        details[cfg.name] = runs
 
     (out_dir / "summary.md").write_text(render_summary(metrics_matrix), encoding="utf-8")
     (out_dir / "cost.md").write_text(render_cost(cost_matrix), encoding="utf-8")
