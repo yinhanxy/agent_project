@@ -23,3 +23,26 @@ def test_parse_events_handles_missing_done():
     assert r["answer"] == "x"
     assert r["ranked_filenames"] == []
     assert r["tokens"] == 0
+
+
+def test_parse_events_extracts_route_and_gap():
+    from eval.system_under_test import parse_events
+    events = [
+        {"type": "token", "data": "已记录缺口"},
+        {"type": "done", "steps": [{"agent": "coordinator"}, {"agent": "knowledge"},
+                                   {"agent": "knowledge_gap"}],
+         "tokens": 100, "citations": [], "plan": {"task_type": "knowledge_gap"}},
+    ]
+    r = parse_events(events)
+    assert r["route"] == "knowledge_gap"
+    assert r["gap_triggered"] is True
+
+
+def test_parse_events_no_gap_when_absent():
+    from eval.system_under_test import parse_events
+    events = [{"type": "done", "steps": [{"agent": "coordinator"}, {"agent": "knowledge"},
+                                         {"agent": "finalize"}],
+              "tokens": 50, "citations": [], "plan": {"task_type": "knowledge_qa"}}]
+    r = parse_events(events)
+    assert r["route"] == "knowledge_qa"
+    assert r["gap_triggered"] is False

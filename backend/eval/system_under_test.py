@@ -6,11 +6,14 @@ def parse_events(events: list) -> dict:
     answer = "".join(e["data"] for e in events if e.get("type") == "token")
     done = next((e for e in reversed(events) if e.get("type") == "done"), {})
     citations = done.get("citations", []) or []
+    trace_agents = [s.get("agent") for s in (done.get("steps", []) or [])]
     return {
         "answer": answer,
         "ranked_filenames": [c.get("filename") for c in citations],
         "tokens": done.get("tokens", 0) or 0,
-        "trace_agents": [s.get("agent") for s in (done.get("steps", []) or [])],
+        "trace_agents": trace_agents,
+        "route": (done.get("plan") or {}).get("task_type"),
+        "gap_triggered": "knowledge_gap" in trace_agents,
     }
 
 
