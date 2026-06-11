@@ -1,25 +1,31 @@
 from eval.report import render_summary, render_cost
 
 
-def test_summary_has_header_and_config_rows():
+def _ms(mean, std):
+    return {"mean": mean, "std": std}
+
+
+def test_summary_has_orchestration_columns_and_meanstd():
     matrix = {
-        "baseline": {"n": 8, "recall@3": 0.75, "mrr": 0.62, "assert_pass_rate": 0.5},
-        "+critic":  {"n": 8, "recall@3": 0.875, "mrr": 0.70, "assert_pass_rate": 0.625},
+        "baseline": {"n": 20, "repeat": 2,
+                     "recall@3": _ms(0.9, 0.0), "mrr": _ms(0.85, 0.02),
+                     "assert_pass_rate": _ms(0.8, 0.1),
+                     "route_accuracy": _ms(0.95, 0.0),
+                     "gap_precision": _ms(1.0, 0.0), "gap_recall": _ms(0.75, 0.0)},
+        "+critic": {"n": 20, "repeat": 2,
+                    "recall@3": _ms(0.9, 0.0), "mrr": _ms(0.9, 0.0),
+                    "assert_pass_rate": _ms(0.95, 0.05),
+                    "route_accuracy": _ms(0.95, 0.0),
+                    "gap_precision": _ms(1.0, 0.0), "gap_recall": _ms(1.0, 0.0)},
     }
     md = render_summary(matrix)
-    assert "| 配置 |" in md
-    assert "baseline" in md
-    assert "+critic" in md
-    assert "0.750" in md          # 数值格式化到 3 位
-    assert "0.875" in md
+    assert "路由准确率" in md
+    assert "缺口" in md
+    assert "0.900±0.000" in md       # mean±std 格式
+    assert "baseline" in md and "+critic" in md
 
 
-def test_cost_table_renders_tokens_and_latency():
-    cost = {
-        "baseline": {"avg_tokens": 1200.0, "avg_latency_s": 3.4},
-        "+hyde":    {"avg_tokens": 1800.0, "avg_latency_s": 5.1},
-    }
+def test_cost_table_meanstd():
+    cost = {"baseline": {"avg_tokens": _ms(1200.0, 50.0), "avg_latency_s": _ms(3.4, 0.2)}}
     md = render_cost(cost)
-    assert "avg_tokens" in md or "平均 token" in md
-    assert "1200" in md
-    assert "5.1" in md
+    assert "1200.000±50.000" in md or "1200.0" in md
