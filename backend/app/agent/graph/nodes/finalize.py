@@ -26,12 +26,14 @@ def _build_messages(state: AgentState) -> list:
             messages.append({"role": "user", "content": u or ""})
             messages.append({"role": "assistant", "content": a or ""})
 
-    # 防幻觉：critic 把低置信 documents 判为 relevant（阈值过严）时，要求严格引用、不推断
+    # 防幻觉：critic 把低置信 documents 判为 relevant（阈值过严）时，要求严格引用、不推断。
+    # 内联进最终 user 消息，避免出现连续两条 user 消息（破坏 user/assistant 交替契约）。
     verdict = (state.get("critic_verdict") or {}).get("verdict")
     if verdict == "relevant":
-        messages.append({"role": "user", "content":
+        user = (
             "请严格只引用文档原文片段作答，不要做推断或综合；"
-            "文档未直接覆盖的部分，明确说明“文档未提及”。"})
+            "文档未直接覆盖的部分，明确说明“文档未提及”。\n\n"
+        ) + user
 
     messages.append({"role": "user", "content": user})
     return messages

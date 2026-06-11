@@ -92,6 +92,9 @@ def test_finalize_injects_strict_citation_when_critic_relevant():
     })
     joined = " ".join(m["content"] for m in msgs)
     assert "文档未提及" in joined        # 注入了严格引用指令
+    # 严格指令内联进最终 user 消息，不产生连续两条同角色消息
+    roles = [m["role"] for m in msgs]
+    assert all(roles[i] != roles[i + 1] for i in range(len(roles) - 1))
 
 
 def test_finalize_no_strict_citation_without_critic():

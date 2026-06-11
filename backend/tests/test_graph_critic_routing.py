@@ -59,5 +59,12 @@ def test_route_after_critic_needs_rewrite_over_budget(monkeypatch):
     assert route_after_critic(state) == "knowledge_gap"
 
 
+def test_route_after_critic_needs_rewrite_zero_budget_to_gap(monkeypatch):
+    monkeypatch.setenv("AGENT_CRITIC_MAX_REVISIONS", "0")
+    # 上限 0：做证据评估但不允许改写重检索（revision_count=1 > 0）→ 直接 gap
+    state = {"critic_verdict": {"verdict": "needs_rewrite"}, "revision_count": 1}
+    assert route_after_critic(state) == "knowledge_gap"
+
+
 def test_route_after_critic_out_of_scope_to_gap():
     assert route_after_critic({"critic_verdict": {"verdict": "out_of_scope"}}) == "knowledge_gap"

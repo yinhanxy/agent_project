@@ -26,8 +26,9 @@ async def knowledge_node(state: AgentState) -> dict:
     is_retry = bool(reformulated)
 
     if is_retry:
+        preview = actual_query[:30] + ("..." if len(actual_query) > 30 else "")
         writer({"kind": "step", "id": "knowledge_refetching", "status": "running",
-                "level": "info", "detail": f"改写后的查询：{actual_query[:30]}...",
+                "level": "info", "detail": f"改写后的查询：{preview}",
                 "title": "用更精细的查询重新检索"})
     else:
         writer({"kind": "step", "id": "tool_rag_summary_tools", "status": "running",

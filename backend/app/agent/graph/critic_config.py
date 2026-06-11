@@ -12,8 +12,13 @@ def critic_enabled() -> bool:
 
 
 def critic_max_revisions() -> int:
-    """critic 触发改写重做的上限（默认 1，即最多改写一次）。"""
+    """critic 触发改写重做的上限（默认 1，即最多改写一次）。
+
+    设硬上限 _MAX_ALLOWED 防止极端配置：每次重做约加 2 个图节点步，
+    取值过大会逼近 LangGraph 默认 recursion_limit=25 触发 GraphRecursionError。
+    """
+    _MAX_ALLOWED = 5
     try:
-        return max(0, int(os.getenv("AGENT_CRITIC_MAX_REVISIONS", "1")))
+        return min(_MAX_ALLOWED, max(0, int(os.getenv("AGENT_CRITIC_MAX_REVISIONS", "1"))))
     except ValueError:
         return 1
