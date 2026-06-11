@@ -115,3 +115,7 @@ glossary.md
 interview_questions.md
 resume_interview_qa.md
 CLAUDE.md
+
+backend/eval/reports/
+backend/.pytmp*/
+backend/.pytest-tmp*/
