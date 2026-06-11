@@ -14,7 +14,10 @@ from datetime import datetime
 from pathlib import Path
 
 from eval.config import CONFIG_MATRIX
+from eval.judge_model import build_judge_model
 from eval.judges.assertion_judge import check_assertions
+from eval.judges.grounding_judge import judge_faithfulness
+from eval.judges.llm_judge import judge_coverage
 from eval.metrics import recall_at_k, mrr, aggregate, route_accuracy, gap_precision_recall
 from eval.report import render_summary, render_cost
 from eval.schema import load_cases
@@ -22,6 +25,7 @@ from eval.schema import load_cases
 EVAL_DIR = Path(__file__).resolve().parent
 DATASET = EVAL_DIR / "datasets" / "retrieval.jsonl"
 ROUTING = EVAL_DIR / "datasets" / "routing.jsonl"
+TASKS = EVAL_DIR / "datasets" / "tasks.jsonl"
 REPORTS = EVAL_DIR / "reports"
 EVAL_REPEAT = int(os.getenv("EVAL_REPEAT", "2"))
 
@@ -56,6 +60,10 @@ def _score_single(cases: list, raw: list) -> tuple:
     gp, gr = gap_precision_recall(gap_pairs)
     metrics["gap_precision"] = gp
     metrics["gap_recall"] = gr
+    covs = [r.get("coverage") for r in raw if r.get("coverage") is not None]
+    faiths = [r.get("faithfulness") for r in raw if r.get("faithfulness") is not None]
+    metrics["coverage"] = statistics.fmean(covs) if covs else None
+    metrics["faithfulness"] = statistics.fmean(faiths) if faiths else None
     toks = [r.get("tokens", 0) for r in raw] or [0]
     lats = [r.get("latency_s", 0.0) for r in raw] or [0.0]
     cost = {"avg_tokens": sum(toks) / len(toks), "avg_latency_s": sum(lats) / len(lats)}
@@ -66,7 +74,7 @@ def score_runs(cases: list, runs: list) -> tuple:
     """多次运行 -> 每个指标 mean/std。runs: list[raw_results]。"""
     scored = [_score_single(cases, raw) for raw in runs]
     metric_keys = ["recall@1", "recall@3", "mrr", "assert_pass_rate",
-                   "route_accuracy", "gap_precision", "gap_recall"]
+                   "route_accuracy", "gap_precision", "gap_recall", "coverage", "faithfulness"]
     cost_keys = sorted({k for _, c in scored for k in c.keys()})
     metrics = {k: _mean_std([m.get(k) for m, _ in scored]) for k in metric_keys}
     metrics["n"] = scored[0][0].get("n", 0) if scored else 0
@@ -75,11 +83,24 @@ def score_runs(cases: list, runs: list) -> tuple:
     return metrics, cost
 
 
+async def judge_open_tasks(cases: list, raw: list) -> None:
+    """就地给 raw 里属于开放式任务（有 rubric_points）的题补 coverage / faithfulness。"""
+    by_id = {c.id: c for c in cases}
+    model = build_judge_model()
+    for r in raw:
+        c = by_id.get(r["id"])
+        if not c or not c.rubric_points:
+            continue
+        r["coverage"] = await judge_coverage(model, c.question, r.get("answer", ""), c.rubric_points)
+        r["faithfulness"] = await judge_faithfulness(model, r.get("answer", ""), r.get("doc_previews", []))
+
+
 async def _worker(out_path: str):
     """子进程：按当前 env 编译被测系统，跑全量数据集，写 json。"""
     from eval.system_under_test import run_dataset
-    cases = load_cases(DATASET) + load_cases(ROUTING)
+    cases = load_cases(DATASET) + load_cases(ROUTING) + load_cases(TASKS)
     raw = await run_dataset(cases)
+    await judge_open_tasks(cases, raw)
     Path(out_path).write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
 
 
@@ -100,7 +121,7 @@ def _run_config_subprocess(cfg, tmp_dir: Path) -> list:
 
 
 def main():
-    cases = load_cases(DATASET) + load_cases(ROUTING)
+    cases = load_cases(DATASET) + load_cases(ROUTING) + load_cases(TASKS)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_dir = REPORTS / stamp
     out_dir.mkdir(parents=True, exist_ok=True)

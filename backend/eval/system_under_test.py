@@ -14,6 +14,7 @@ def parse_events(events: list) -> dict:
         "trace_agents": trace_agents,
         "route": (done.get("plan") or {}).get("task_type"),
         "gap_triggered": "knowledge_gap" in trace_agents,
+        "doc_previews": [c.get("chunk_preview", "") for c in citations],
     }
 
 

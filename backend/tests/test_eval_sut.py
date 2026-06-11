@@ -46,3 +46,11 @@ def test_parse_events_no_gap_when_absent():
     r = parse_events(events)
     assert r["route"] == "knowledge_qa"
     assert r["gap_triggered"] is False
+
+
+def test_parse_events_exposes_doc_previews():
+    from eval.system_under_test import parse_events
+    events = [{"type": "done", "steps": [], "tokens": 1, "plan": {"task_type": "document_compare"},
+               "citations": [{"filename": "a.md", "chunk_preview": "片段A", "score": 0.9}]}]
+    r = parse_events(events)
+    assert r["doc_previews"] == ["片段A"]

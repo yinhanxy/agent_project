@@ -81,3 +81,16 @@ def test_score_runs_aggregates_mean_std():
     assert metrics["route_accuracy"]["mean"] == 1.0
     assert cost["avg_tokens"]["mean"] == 150.0
     assert cost["avg_latency_s"]["mean"] == 2.0
+
+
+def test_score_single_aggregates_open_metrics():
+    from eval.runner import _score_single
+    from eval.schema import EvalCase
+    cases = [EvalCase(id="cmp-001", question="q", type="document_compare",
+                      rubric_points=["a", "b", "c", "d"])]
+    raw = [{"id": "cmp-001", "answer": "x", "ranked_filenames": [], "tokens": 0,
+            "latency_s": 0.0, "route": "document_compare", "gap_triggered": False,
+            "coverage": 0.5, "faithfulness": 1.0}]
+    agg, _ = _score_single(cases, raw)
+    assert agg["coverage"] == 0.5
+    assert agg["faithfulness"] == 1.0
