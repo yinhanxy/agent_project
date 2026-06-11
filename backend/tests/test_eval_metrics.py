@@ -57,3 +57,31 @@ def test_score_results_combines_metrics_and_cost():
     assert metrics["assert_pass_rate"] == 1.0  # 两题断言都过（qa-008 空断言=过）
     assert cost["avg_tokens"] == 1200.0
     assert cost["avg_latency_s"] == 2.5
+
+
+def test_route_accuracy():
+    from eval.metrics import route_accuracy
+    pairs = [("knowledge_qa", "knowledge_qa"), ("document_compare", "knowledge_qa"),
+             ("knowledge_gap", "knowledge_gap")]
+    # (predicted, expected)
+    assert route_accuracy(pairs) == 2 / 3
+
+
+def test_route_accuracy_ignores_none_expected():
+    from eval.metrics import route_accuracy
+    assert route_accuracy([("knowledge_qa", None), ("a", "a")]) == 1.0  # 只算有 expected 的
+
+
+def test_gap_precision_recall():
+    from eval.metrics import gap_precision_recall
+    # (predicted_triggered, expected_triggered)
+    pairs = [(True, True), (True, False), (False, True), (False, False)]
+    p, r = gap_precision_recall(pairs)
+    assert p == 0.5   # TP=1, FP=1
+    assert r == 0.5   # TP=1, FN=1
+
+
+def test_gap_pr_no_expected_returns_none():
+    from eval.metrics import gap_precision_recall
+    p, r = gap_precision_recall([(False, None), (True, None)])
+    assert p is None and r is None

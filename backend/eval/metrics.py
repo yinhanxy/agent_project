@@ -34,3 +34,25 @@ def aggregate(per_case: list) -> dict:
             if per_case else None
         ),
     }
+
+
+def route_accuracy(pairs: list) -> Optional[float]:
+    """pairs: [(predicted_route, expected_route)]。只统计 expected 非 None 的题。"""
+    judged = [(p, e) for p, e in pairs if e is not None]
+    if not judged:
+        return None
+    return sum(1 for p, e in judged if p == e) / len(judged)
+
+
+def gap_precision_recall(pairs: list) -> tuple:
+    """pairs: [(predicted_triggered: bool, expected_triggered: bool|None)]。
+    只统计 expected 非 None 的题；返回 (precision, recall)，无样本时 (None, None)。"""
+    judged = [(bool(p), bool(e)) for p, e in pairs if e is not None]
+    if not judged:
+        return None, None
+    tp = sum(1 for p, e in judged if p and e)
+    fp = sum(1 for p, e in judged if p and not e)
+    fn = sum(1 for p, e in judged if not p and e)
+    precision = tp / (tp + fp) if (tp + fp) else None
+    recall = tp / (tp + fn) if (tp + fn) else None
+    return precision, recall
