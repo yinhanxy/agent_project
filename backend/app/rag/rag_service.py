@@ -28,6 +28,13 @@ _CONFIDENCE_THRESHOLD = float(os.getenv("RAG_CONFIDENCE_THRESHOLD", "-5.0"))
 _GAP_THRESHOLD = float(os.getenv("RAG_GAP_THRESHOLD", "0.75"))
 
 
+def _hyde_enabled() -> bool:
+    """HyDE 开关（运行时读，便于子进程 env 注入与测试 monkeypatch）。
+    默认 true，保持原有行为；设 false/0/no 则跳过假设文档生成，直接用原 query 检索。
+    """
+    return os.getenv("RAG_HYDE_ENABLE", "true").strip().lower() not in ("false", "0", "no")
+
+
 class RetrievalError(RuntimeError):
     """检索系统故障（向量库/BM25/嵌入模型不可用等）。
     与"检索成功但无命中"是两类不同的失败：前者属于系统错误，
@@ -117,7 +124,11 @@ class RagService:
 
         total_t0 = time.perf_counter()
         logger.info(f"【HyDE】开始处理查询: {query}")
-        hypothetical_doc = await self.generate_hypothetical_document(query)
+        if _hyde_enabled():
+            hypothetical_doc = await self.generate_hypothetical_document(query)
+        else:
+            hypothetical_doc = query
+            logger.info("【HyDE】RAG_HYDE_ENABLE=false，跳过假设文档，直接用原 query 检索")
 
         try:
             retrieve_t0 = time.perf_counter()
