@@ -12,15 +12,16 @@ def render_summary(matrix: dict) -> str:
     lines = [
         "# 评估对比表（检索 + 回答 + 编排，mean±std）",
         "",
-        "| 配置 | n | 重复 | recall@1 | recall@3 | MRR | 事实断言 | 路由准确率 | 缺口精确率 | 缺口召回率 |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| 配置 | n | 重复 | recall@1 | recall@3 | MRR | 事实断言 | 路由准确率 | 缺口精确率 | 缺口召回率 | rubric覆盖率 | 忠实度 |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for name, m in matrix.items():
         lines.append(
             f"| {name} | {m.get('n','—')} | {m.get('repeat','—')} | "
             f"{_ms(m.get('recall@1'))} | {_ms(m.get('recall@3'))} | "
             f"{_ms(m.get('mrr'))} | {_ms(m.get('assert_pass_rate'))} | "
-            f"{_ms(m.get('route_accuracy'))} | {_ms(m.get('gap_precision'))} | {_ms(m.get('gap_recall'))} |"
+            f"{_ms(m.get('route_accuracy'))} | {_ms(m.get('gap_precision'))} | {_ms(m.get('gap_recall'))} | "
+            f"{_ms(m.get('coverage'))} | {_ms(m.get('faithfulness'))} |"
         )
     lines.append("")
     lines.append("> 样本量小（指示性，非统计显著）。mean±std 为同配置多次运行的均值与总体标准差；— 表示不适用。")
