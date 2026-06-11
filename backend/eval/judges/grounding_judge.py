@@ -6,7 +6,7 @@ from pydantic import BaseModel
 class GroundingVerdict(BaseModel):
     total_claims: int                 # 回答里可核查的事实性陈述数
     unsupported_claims: list[str]     # 其中在文档里找不到依据的
-    reasoning: str
+    reasoning: str = ""
 
 
 def faithfulness_score(total_claims: int, unsupported: int) -> Optional[float]:

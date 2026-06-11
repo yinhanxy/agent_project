@@ -7,6 +7,11 @@ def test_faithfulness_score():
     assert faithfulness_score(total_claims=0, unsupported=0) is None  # 无可判 → 不适用
 
 
+def test_grounding_verdict_reasoning_defaults_empty():
+    v = GroundingVerdict(total_claims=1, unsupported_claims=[])
+    assert v.reasoning == ""
+
+
 class _FakeStruct:
     def __init__(self, v): self._v = v
     async def ainvoke(self, m): return self._v

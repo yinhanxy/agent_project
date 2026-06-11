@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 class CoverageVerdict(BaseModel):
     covered_points: list[str]   # 回答确实覆盖到的 rubric 要点（原样回填）
-    reasoning: str
+    reasoning: str = ""
 
 
 def coverage_ratio(covered_points: list, total: int) -> Optional[float]:

@@ -8,6 +8,11 @@ def test_coverage_ratio():
     assert coverage_ratio(["a"], total=0) is None   # 无 rubric 不适用
 
 
+def test_coverage_verdict_reasoning_defaults_empty():
+    v = CoverageVerdict(covered_points=[])
+    assert v.reasoning == ""
+
+
 class _FakeStruct:
     def __init__(self, verdict): self._v = verdict
     async def ainvoke(self, messages): return self._v
