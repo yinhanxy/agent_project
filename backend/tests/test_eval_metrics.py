@@ -74,6 +74,7 @@ def test_score_runs_aggregates_mean_std():
     run2 = [{"id": "qa-001", "answer": "无", "ranked_filenames": ["A.md"], "tokens": 200,
              "latency_s": 3.0, "route": "knowledge_qa", "gap_triggered": False}]
     metrics, cost = score_runs(cases, [run1, run2])
+    assert metrics["recall@1"]["mean"] == 1.0
     assert metrics["recall@3"]["mean"] == 1.0
     assert metrics["assert_pass_rate"]["mean"] == 0.5
     assert metrics["assert_pass_rate"]["std"] == 0.5     # |0.5-1| 与 |0.5-0|

@@ -27,6 +27,7 @@ def aggregate(per_case: list) -> dict:
     """把每题指标聚合成数据集级指标。None 不计入均值。"""
     return {
         "n": len(per_case),
+        "recall@1": _mean_ignore_none([c.get("recall@1") for c in per_case]),
         "recall@3": _mean_ignore_none([c.get("recall@3") for c in per_case]),
         "mrr": _mean_ignore_none([c.get("mrr") for c in per_case]),
         "assert_pass_rate": (

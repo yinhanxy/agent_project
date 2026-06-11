@@ -44,6 +44,7 @@ def _score_single(cases: list, raw: list) -> tuple:
         r = by_id.get(c.id, {})
         ranked = r.get("ranked_filenames", [])
         per_case.append({
+            "recall@1": recall_at_k(ranked, c.expected_doc, k=1),
             "recall@3": recall_at_k(ranked, c.expected_doc, k=3),
             "mrr": mrr(ranked, c.expected_doc),
             "assert_pass": check_assertions(r.get("answer", ""), c.answer_assertions),
@@ -64,7 +65,8 @@ def _score_single(cases: list, raw: list) -> tuple:
 def score_runs(cases: list, runs: list) -> tuple:
     """多次运行 -> 每个指标 mean/std。runs: list[raw_results]。"""
     scored = [_score_single(cases, raw) for raw in runs]
-    metric_keys = sorted({k for m, _ in scored for k in m.keys() if k != "n"})
+    metric_keys = ["recall@1", "recall@3", "mrr", "assert_pass_rate",
+                   "route_accuracy", "gap_precision", "gap_recall"]
     cost_keys = sorted({k for _, c in scored for k in c.keys()})
     metrics = {k: _mean_std([m.get(k) for m, _ in scored]) for k in metric_keys}
     metrics["n"] = scored[0][0].get("n", 0) if scored else 0
