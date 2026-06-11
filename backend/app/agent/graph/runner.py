@@ -59,6 +59,7 @@ class GraphRunner:
         final_answer_state = ""
         graph_token_usage = 0
         final_trace: list = []
+        final_plan: dict = {}
         async for item in self._graph.astream(
             state, stream_mode=["messages", "custom", "values"]
         ):
@@ -73,6 +74,8 @@ class GraphRunner:
                         graph_token_usage = payload["token_usage"]
                     if payload.get("trace") is not None:
                         final_trace = payload["trace"]
+                    if payload.get("plan") is not None:
+                        final_plan = payload["plan"]
                 continue
 
             # 在 messages 模式下尽量从 chunk 读精确 usage（最后一帧通常带）
@@ -124,7 +127,8 @@ class GraphRunner:
         final_tokens = graph_token_usage if graph_token_usage else (
             accurate_tokens if accurate_tokens is not None else estimated_total
         )
-        yield {"type": "done", "steps": trace_steps, "tokens": final_tokens, "citations": final_citations}
+        yield {"type": "done", "steps": trace_steps, "tokens": final_tokens,
+               "citations": final_citations, "plan": final_plan}
 
 
 # 全局单例（图编译一次复用）
