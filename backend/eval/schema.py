@@ -15,6 +15,7 @@ class EvalCase:
     history: list = field(default_factory=list)            # [[user, assistant], ...]
     expected_route: Optional[str] = None          # coordinator 预期路由
     expect_gap_triggered: Optional[bool] = None    # 是否预期触发知识缺口
+    rubric_points: list = field(default_factory=list)   # 开放式输出的逐点评分要点
 
 
 def load_cases(path) -> list[EvalCase]:
@@ -35,5 +36,6 @@ def load_cases(path) -> list[EvalCase]:
             history=raw.get("history", []),
             expected_route=raw.get("expected_route"),
             expect_gap_triggered=raw.get("expect_gap_triggered"),
+            rubric_points=raw.get("rubric_points", []),
         ))
     return cases

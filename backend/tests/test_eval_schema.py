@@ -61,3 +61,13 @@ def test_routing_dataset_loads():
     assert {c.expected_route for c in cases} >= {
         "knowledge_qa", "document_compare", "report_generation",
         "document_generation", "knowledge_gap"}
+
+
+def test_tasks_dataset_has_rubric_points():
+    from pathlib import Path
+    from eval.schema import load_cases
+    cases = load_cases(Path(__file__).parent.parent / "eval" / "datasets" / "tasks.jsonl")
+    assert len(cases) >= 4
+    assert all(c.rubric_points for c in cases)            # 每条都有评分点
+    assert {c.type for c in cases} >= {"document_compare", "report_generation",
+                                       "document_generation"}
