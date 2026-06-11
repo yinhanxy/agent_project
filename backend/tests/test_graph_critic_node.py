@@ -101,3 +101,22 @@ async def test_critic_degrades_on_parsing_error(monkeypatch):
     update = await critic_node({"query": "x", "documents": [], "max_score": None})
     assert update["critic_verdict"]["verdict"] == "relevant"
     assert update["trace"][0]["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_critic_prompt_includes_recent_history(monkeypatch):
+    captured = {}
+    result = CriticVerdict(verdict="needs_rewrite", reason="指代未消解",
+                           reformulated_query="差旅2025版报销上限")
+
+    import app.agent.graph.nodes.critic as cr
+    monkeypatch.setattr(cr, "chat_model", _FakeChatModel(result, captured))
+
+    await critic_node({
+        "query": "那它2025版呢",
+        "documents": [],
+        "max_score": 0.1,
+        "history": [("差旅2023版上限", "上限500元")],
+    })
+    user_content = captured["messages"][-1]["content"]
+    assert "差旅2023版上限" in user_content and "那它2025版呢" in user_content

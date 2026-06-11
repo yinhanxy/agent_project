@@ -50,8 +50,16 @@ def _build_messages(state: AgentState) -> list:
         evidence = "\n\n".join(f"【片段{i}】{d[:300]}" for i, d in enumerate(documents, 1))
     else:
         evidence = "（无检索结果）"
+
+    # 最近一轮历史用于指代消解判断（"那它呢" → 补全主体后再评估检索召回）
+    history = state.get("history") or []
+    history_text = ""
+    if history and isinstance(history[-1], (list, tuple)) and len(history[-1]) == 2:
+        last_u, last_a = history[-1]
+        history_text = f"（上一轮——用户：{last_u}；助手：{last_a}）\n"
+
     user = (
-        f"用户当前问题：{state['query']}\n"
+        f"{history_text}用户当前问题：{state['query']}\n"
         f"检索最高相关度：{state.get('max_score')}\n"
         f"检索到的证据片段：\n{evidence}"
     )
