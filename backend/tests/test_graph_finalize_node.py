@@ -81,3 +81,21 @@ async def test_finalize_includes_history(monkeypatch):
     assert captured["messages"][1]["content"] == "2023版报销上限多少"
     assert captured["messages"][2]["content"] == "上限是500元"
     assert "那它2025版改了什么" in captured["messages"][-1]["content"]
+
+
+def test_finalize_injects_strict_citation_when_critic_relevant():
+    from app.agent.graph.nodes.finalize import _build_messages
+    msgs = _build_messages({
+        "query": "年假几天",
+        "documents": ["年假为5天"],
+        "critic_verdict": {"verdict": "relevant"},
+    })
+    joined = " ".join(m["content"] for m in msgs)
+    assert "文档未提及" in joined        # 注入了严格引用指令
+
+
+def test_finalize_no_strict_citation_without_critic():
+    from app.agent.graph.nodes.finalize import _build_messages
+    msgs = _build_messages({"query": "年假几天", "documents": ["年假为5天"]})
+    joined = " ".join(m["content"] for m in msgs)
+    assert "文档未提及" not in joined    # 无 critic_verdict 时不注入
