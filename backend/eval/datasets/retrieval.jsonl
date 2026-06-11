@@ -1,0 +1,8 @@
+{"id":"qa-001","question":"一线城市出差住宿费每晚上限是多少？","type":"knowledge_qa","expected_doc":"02-差旅与报销管理办法-2025版.md","answer_assertions":{"must_include":["550"],"must_not_include":["450"]},"should_refuse":false}
+{"id":"qa-002","question":"工龄满12年每年有几天年假？","type":"knowledge_qa","expected_doc":"03-考勤与请假管理制度.md","answer_assertions":{"must_include":["10"]},"should_refuse":false}
+{"id":"qa-003","question":"远程办公申请需要满足哪些条件？","type":"knowledge_qa","expected_doc":"04-远程办公管理规定.md","answer_assertions":{"must_include":["申请"]},"should_refuse":false}
+{"id":"qa-004","question":"试用期员工有带薪年假吗？","type":"knowledge_qa","expected_doc":"05-员工入职与转正管理办法.md","answer_assertions":{"must_include":["转正"]},"should_refuse":false}
+{"id":"qa-005","question":"笔记本电脑多久更换一次？","type":"knowledge_qa","expected_doc":"06-IT设备与办公用品管理规定.md","answer_assertions":{"must_include":["4"]},"should_refuse":false}
+{"id":"qa-006","question":"2025版差旅报销的审批额度上限是多少？","type":"knowledge_qa","expected_doc":"02-差旅与报销管理办法-2025版.md","answer_assertions":{"must_include":["8000"],"must_not_include":["5000"]},"should_refuse":false}
+{"id":"qa-007","question":"报销时限是多少天？","type":"knowledge_qa","expected_doc":"02-差旅与报销管理办法-2025版.md","answer_assertions":{"must_include":["60"]},"should_refuse":false}
+{"id":"qa-008","question":"公司的股权激励计划细则是怎样的？","type":"knowledge_qa","expected_doc":null,"answer_assertions":{},"should_refuse":true}
