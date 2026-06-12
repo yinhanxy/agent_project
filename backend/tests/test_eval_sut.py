@@ -54,3 +54,19 @@ def test_parse_events_exposes_doc_previews():
                "citations": [{"filename": "a.md", "chunk_preview": "片段A", "score": 0.9}]}]
     r = parse_events(events)
     assert r["doc_previews"] == ["片段A"]
+
+
+def test_parse_events_exposes_max_score():
+    from eval.system_under_test import parse_events
+    events = [{"type": "done", "steps": [], "tokens": 1, "plan": {"task_type": "knowledge_qa"},
+               "citations": [{"filename": "a.md", "score": 0.83},
+                             {"filename": "b.md", "score": 0.41}]}]
+    r = parse_events(events)
+    assert r["max_score"] == 0.83
+
+
+def test_parse_events_max_score_none_when_no_citations():
+    from eval.system_under_test import parse_events
+    r = parse_events([{"type": "done", "steps": [], "tokens": 1, "citations": [],
+                       "plan": {"task_type": "knowledge_gap"}}])
+    assert r["max_score"] is None
