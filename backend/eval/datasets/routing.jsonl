@@ -10,3 +10,7 @@
 {"id":"rt-010","question":"境外出差的签证费和国际机票怎么报销？","type":"knowledge_gap","expected_route":"knowledge_gap","expect_gap_triggered":true}
 {"id":"rt-011","question":"公司有没有补充商业医疗保险？保额多少？","type":"knowledge_gap","expected_route":"knowledge_gap","expect_gap_triggered":true}
 {"id":"rt-012","question":"陪产假和育儿假各有几天？","type":"knowledge_gap","expected_route":"knowledge_gap","expect_gap_triggered":true}
+{"id":"rt-013","question":"差旅报销款需要缴纳个人所得税吗？","type":"knowledge_gap","expected_route":"knowledge_gap","expect_gap_triggered":true}
+{"id":"rt-014","question":"病假期间全勤奖是否照发？","type":"knowledge_gap","expected_route":"knowledge_gap","expect_gap_triggered":true}
+{"id":"rt-015","question":"远程办公期间午餐补贴是否照发？","type":"knowledge_gap","expected_route":"knowledge_gap","expect_gap_triggered":true}
+{"id":"rt-016","question":"员工离职后能否折价购买已领用的笔记本电脑？","type":"knowledge_gap","expected_route":"knowledge_gap","expect_gap_triggered":true}

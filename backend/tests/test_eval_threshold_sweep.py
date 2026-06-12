@@ -14,3 +14,9 @@ def test_sweep_computes_pr_f1_per_threshold():
 def test_best_threshold_picks_max_f1():
     rows = {0.5: {"f1": 0.8}, 0.7: {"f1": 0.95}, 0.9: {"f1": 0.6}}
     assert best_threshold(rows) == 0.7
+
+
+def test_best_threshold_ties_picks_midpoint():
+    from eval.threshold_sweep import best_threshold
+    rows = {0.5: {"f1": 1.0}, 0.6: {"f1": 1.0}, 0.7: {"f1": 1.0}, 0.8: {"f1": 0.5}}
+    assert best_threshold(rows) == 0.6

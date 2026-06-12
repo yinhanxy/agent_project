@@ -34,7 +34,11 @@ def sweep(pairs: list, thresholds: list) -> dict:
 def best_threshold(rows: dict) -> Optional[float]:
     """取 F1 最高的阈值。"""
     cand = [(t, v.get("f1")) for t, v in rows.items() if v.get("f1") is not None]
-    return max(cand, key=lambda x: x[1])[0] if cand else None
+    if not cand:
+        return None
+    top = max(f1 for _, f1 in cand)
+    best_ts = sorted(t for t, f1 in cand if f1 == top)
+    return best_ts[len(best_ts) // 2]
 
 
 def render(rows: dict) -> str:
