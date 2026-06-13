@@ -1,11 +1,37 @@
 """LLM-judge：开放式输出按 rubric_points 逐点核对覆盖率。逐点核对而非整体打分，降 judge 波动。"""
+import json
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+
+def _coerce_str_list(v):
+    """容错：不同 judge 模型的结构化输出可能把 list 字段返回成字符串化的 JSON
+    数组（如 '\\n["a","b"]\\n'）或纯文本，而非真正的 list。统一归一化成 list[str]。
+    """
+    if v is None:
+        return []
+    if isinstance(v, list):
+        return [str(x) for x in v]
+    if isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return []
+        try:
+            parsed = json.loads(s)
+            return [str(x) for x in parsed] if isinstance(parsed, list) else [str(parsed)]
+        except Exception:
+            return [s]
+    return [str(v)]
 
 
 class CoverageVerdict(BaseModel):
-    covered_points: list[str]   # 回答确实覆盖到的 rubric 要点（原样回填）
+    covered_points: list[str] = []   # 回答确实覆盖到的 rubric 要点（原样回填）
     reasoning: str = ""
+
+    @field_validator("covered_points", mode="before")
+    @classmethod
+    def _v_covered(cls, v):
+        return _coerce_str_list(v)
 
 
 def coverage_ratio(covered_points: list, total: int) -> Optional[float]:

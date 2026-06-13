@@ -1,12 +1,54 @@
 """grounding faithfulness：回答的事实陈述是否都能在检索文档里找到依据。"""
+import json
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+
+def _coerce_str_list(v):
+    """容错：不同 judge 模型的结构化输出可能把 list 字段返回成字符串化的 JSON
+    数组（如 '\\n["a","b"]\\n'）或纯文本，而非真正的 list。统一归一化成 list[str]。
+    """
+    if v is None:
+        return []
+    if isinstance(v, list):
+        return [str(x) for x in v]
+    if isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return []
+        try:
+            parsed = json.loads(s)
+            return [str(x) for x in parsed] if isinstance(parsed, list) else [str(parsed)]
+        except Exception:
+            return [s]
+    return [str(v)]
+
+
+def _coerce_int(v):
+    """容错：judge 可能把 int 字段返回成字符串（如 "3"）。无法解析时退 0。"""
+    if isinstance(v, str):
+        s = v.strip()
+        try:
+            return int(float(s)) if s else 0
+        except Exception:
+            return 0
+    return v
 
 
 class GroundingVerdict(BaseModel):
-    total_claims: int                 # 回答里可核查的事实性陈述数
-    unsupported_claims: list[str]     # 其中在文档里找不到依据的
+    total_claims: int = 0             # 回答里可核查的事实性陈述数
+    unsupported_claims: list[str] = []  # 其中在文档里找不到依据的
     reasoning: str = ""
+
+    @field_validator("unsupported_claims", mode="before")
+    @classmethod
+    def _v_unsupported(cls, v):
+        return _coerce_str_list(v)
+
+    @field_validator("total_claims", mode="before")
+    @classmethod
+    def _v_total(cls, v):
+        return _coerce_int(v)
 
 
 def faithfulness_score(total_claims: int, unsupported: int) -> Optional[float]:
