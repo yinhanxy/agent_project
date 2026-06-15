@@ -20,6 +20,7 @@
 - [API 速览](#api-速览)
 - [RAG 与知识库机制](#rag-与知识库机制)
 - [LangGraph Agent 引擎](#langgraph-agent-引擎)
+- [评估体系](#评估体系)
 - [测试与构建](#测试与构建)
 - [常见问题](#常见问题)
 - [相关文档](#相关文档)
@@ -636,6 +637,36 @@ START → coordinator → (knowledge | finalize)
 知识缺口落库后会出现在 `/knowledge-gaps` 页：管理员看全部、普通用户只看自己产生的，状态可改 `pending` → `reviewed` / `resolved` / `ignored`。
 
 > 实测语料、走查命令和典型问题清单见 [docs/test-corpus/README.md](./docs/test-corpus/README.md) 与 [docs/walkthroughs/p5b-knowledge-gap-walkthrough.md](./docs/walkthroughs/p5b-knowledge-gap-walkthrough.md)。
+
+## 评估体系
+
+项目不止于把功能搭起来，还配了一套**配置驱动、可重复、支持消融对比**的评估管线（代码在 [`backend/eval/`](./backend/eval/)），用数据量化每个机制的真实收益——也就是「评估驱动迭代」而不是「凭感觉调参」。
+
+**三层指标**，每层有独立的 ground truth：
+
+| 层 | 指标 | 标尺 |
+| --- | --- | --- |
+| 检索 | recall@1 / recall@3 / MRR | 标注的 `expected_doc` |
+| 回答 | 事实断言通过率 / grounding 忠实度 / rubric 覆盖率 | `answer_assertions`、引用文档 |
+| 编排 | 路由准确率 / 缺口精确率·召回率 | `expected_route`、`expect_gap_triggered` |
+
+**消融对比**（约 100 题人工标注集，子进程隔离注入开关，样本偏小、定位为指示性）：
+
+| 配置 | 缺口精确率 | rubric 覆盖率 | 忠实度 | 平均延迟 |
+| --- | --- | --- | --- | --- |
+| baseline | 0.50 | 0.55 | 0.52 | 6.6s |
+| **+critic** | **0.87** | **0.69** | **0.65** | 7.5s |
+| +hyde | 0.52 | 0.59 | 0.51 | 18.9s |
+
+> 检索层 recall@1=0.881、MRR=0.933、事实断言通过率 0.99。
+
+**几个用数据做的工程决策**：
+
+- **critic 自我修正闭环有效**：把知识缺口判定精确率从 0.50 提到 0.87、rubric 覆盖率 0.55→0.69、忠实度 0.52→0.65；
+- **HyDE 默认关，是算出来的**：开启后平均延迟从 6.6s 涨到 18.9s（约 3 倍），但检索和回答指标反而没涨，故默认关、保留为可配开关；
+- **LLM-judge 可信度**：judge 用千问（与被测的 DeepSeek 跨家族）规避自评偏袒，配合 temperature=0、逐点 rubric 核对、人工校准一致性。
+
+一条命令（`python -m eval.runner`）跑完整个配置矩阵，产出三层指标对比表 + 成本表。
 
 ## 测试与构建
 
